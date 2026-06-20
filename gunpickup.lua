@@ -1,28 +1,16 @@
 --[[
-    FULLY WORKING MM2 GUN PICKUP SCRIPT
-    Features:
-    - Clean GUI with draggable frame
-    - X button to close/remove GUI
-    - "Auto Pickup Gun" toggle button
-    - "Pickup Gun" manual button
-    - Toast notifications in bottom right corner
-    - GUI has priority over Roblox menus (always on top)
-    - Teleports to gun using the actual game mechanics
-    - ALL IN ONE SCRIPT - Ready for Loadstring
+    FIXED MM2 GUN PICKUP SCRIPT - WORKS WITH LOADSTRING
 ]]
 
--- Services
+-- Get the player safely
 local Players = game:GetService("Players")
 local Player = Players.LocalPlayer
 
--- Wait for player to be fully loaded
-if not Player then
-    Players.PlayerAdded:Wait()
-    Player = Players.LocalPlayer
-end
+-- Wait for player
+repeat task.wait() until Player and Player.Character and Player.Character:FindFirstChild("HumanoidRootPart")
 
-local Character = Player.Character or Player.CharacterAdded:Wait()
-local HumanoidRootPart = Character:WaitForChild("HumanoidRootPart")
+local Character = Player.Character
+local HumanoidRootPart = Character.HumanoidRootPart
 local RunService = game:GetService("RunService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local TweenService = game:GetService("TweenService")
@@ -30,41 +18,33 @@ local TweenService = game:GetService("TweenService")
 -- Variables
 local autoPickupEnabled = false
 local originalPosition = nil
-local isTeleporting = false
 local isPickingUp = false
 local ScreenGui = nil
 
 -- ==================== TOAST NOTIFICATION SYSTEM ====================
 local function createToastNotification(message, type)
-    -- Types: "info" (blue), "success" (green), "error" (red), "warning" (yellow)
     local colorMap = {
         info = Color3.fromRGB(52, 152, 219),
         success = Color3.fromRGB(46, 204, 113),
         error = Color3.fromRGB(231, 76, 60),
         warning = Color3.fromRGB(241, 196, 15)
     }
-    
     local bgColor = colorMap[type] or colorMap.info
     
-    -- Create notification container with high priority
     local notificationContainer = Instance.new("Frame")
-    notificationContainer.Name = "ToastNotification"
     notificationContainer.Size = UDim2.new(0, 300, 0, 50)
     notificationContainer.Position = UDim2.new(1, -320, 1, -100)
     notificationContainer.BackgroundColor3 = Color3.fromRGB(30, 30, 35)
     notificationContainer.BackgroundTransparency = 0.05
     notificationContainer.BorderSizePixel = 0
-    notificationContainer.Visible = true
     notificationContainer.DisplayOrder = 999
     notificationContainer.ZIndex = 999
     notificationContainer.Parent = Player.PlayerGui
     
-    -- Corner rounding
     local toastCorner = Instance.new("UICorner")
     toastCorner.CornerRadius = UDim.new(0, 8)
     toastCorner.Parent = notificationContainer
     
-    -- Color bar on left side
     local colorBar = Instance.new("Frame")
     colorBar.Size = UDim2.new(0, 5, 1, 0)
     colorBar.BackgroundColor3 = bgColor
@@ -76,7 +56,6 @@ local function createToastNotification(message, type)
     barCorner.CornerRadius = UDim.new(0, 4)
     barCorner.Parent = colorBar
     
-    -- Icon
     local iconLabel = Instance.new("TextLabel")
     iconLabel.Size = UDim2.new(0, 30, 1, 0)
     iconLabel.Position = UDim2.new(0, 10, 0, 0)
@@ -89,7 +68,6 @@ local function createToastNotification(message, type)
     iconLabel.ZIndex = 1000
     iconLabel.Parent = notificationContainer
     
-    -- Message text
     local messageLabel = Instance.new("TextLabel")
     messageLabel.Size = UDim2.new(1, -50, 1, 0)
     messageLabel.Position = UDim2.new(0, 45, 0, 0)
@@ -103,18 +81,15 @@ local function createToastNotification(message, type)
     messageLabel.ZIndex = 1000
     messageLabel.Parent = notificationContainer
     
-    -- Animate in from right
     notificationContainer.Position = UDim2.new(1, -320, 1, -100)
     notificationContainer.BackgroundTransparency = 1
     
-    -- Fade in and slide
     local fadeIn = TweenService:Create(notificationContainer, 
         TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
         {BackgroundTransparency = 0.05, Position = UDim2.new(1, -320, 1, -120)}
     )
     fadeIn:Play()
     
-    -- Auto remove after 3 seconds with fade out
     task.wait(2.5)
     
     local fadeOut = TweenService:Create(notificationContainer,
@@ -127,11 +102,15 @@ local function createToastNotification(message, type)
     notificationContainer:Destroy()
 end
 
--- ==================== CREATE GUI WITH PRIORITY ====================
+-- ==================== CREATE GUI ====================
 local function createGUI()
-    -- Make sure PlayerGui exists
     if not Player.PlayerGui then
         Player:WaitForChild("PlayerGui")
+    end
+    
+    -- Remove old GUI if exists
+    if Player.PlayerGui:FindFirstChild("GunPickupGUI") then
+        Player.PlayerGui.GunPickupGUI:Destroy()
     end
     
     ScreenGui = Instance.new("ScreenGui")
@@ -141,12 +120,10 @@ local function createGUI()
     ScreenGui.DisplayOrder = 999
     ScreenGui.ZIndexBehavior = Enum.ZIndexBehavior.Global
     
-    -- Create notification when script loads
     createToastNotification("🔫 Gun Pickup Script Loaded!", "success")
     
     -- Main Frame
     local MainFrame = Instance.new("Frame")
-    MainFrame.Name = "MainFrame"
     MainFrame.Size = UDim2.new(0, 250, 0, 150)
     MainFrame.Position = UDim2.new(0.5, -125, 0.5, -75)
     MainFrame.BackgroundColor3 = Color3.fromRGB(30, 30, 35)
@@ -159,22 +136,18 @@ local function createGUI()
     MainFrame.ZIndex = 999
     MainFrame.Parent = ScreenGui
     
-    -- Shadow effect for visibility
     local shadowEffect = Instance.new("UIStroke")
-    shadowEffect.Name = "ShadowEffect"
     shadowEffect.Color = Color3.fromRGB(0, 0, 0)
     shadowEffect.Thickness = 3
     shadowEffect.Transparency = 0.7
     shadowEffect.Parent = MainFrame
     
-    -- Corner rounding
     local UICorner = Instance.new("UICorner")
     UICorner.CornerRadius = UDim.new(0, 10)
     UICorner.Parent = MainFrame
     
     -- Title Bar
     local TitleBar = Instance.new("Frame")
-    TitleBar.Name = "TitleBar"
     TitleBar.Size = UDim2.new(1, 0, 0, 35)
     TitleBar.BackgroundColor3 = Color3.fromRGB(45, 45, 50)
     TitleBar.BackgroundTransparency = 0.1
@@ -188,7 +161,6 @@ local function createGUI()
     TitleCorner.Parent = TitleBar
     
     local TitleLabel = Instance.new("TextLabel")
-    TitleLabel.Name = "TitleLabel"
     TitleLabel.Size = UDim2.new(1, -40, 1, 0)
     TitleLabel.Position = UDim2.new(0, 10, 0, 0)
     TitleLabel.BackgroundTransparency = 1
@@ -201,9 +173,8 @@ local function createGUI()
     TitleLabel.ZIndex = 1000
     TitleLabel.Parent = TitleBar
     
-    -- Close Button (X)
+    -- Close Button
     local CloseButton = Instance.new("TextButton")
-    CloseButton.Name = "CloseButton"
     CloseButton.Size = UDim2.new(0, 30, 1, 0)
     CloseButton.Position = UDim2.new(1, -30, 0, 0)
     CloseButton.BackgroundColor3 = Color3.fromRGB(200, 50, 50)
@@ -221,9 +192,8 @@ local function createGUI()
     CloseCorner.CornerRadius = UDim.new(0, 8)
     CloseCorner.Parent = CloseButton
     
-    -- Auto Pickup Toggle Button
+    -- Auto Pickup Button
     local AutoPickupButton = Instance.new("TextButton")
-    AutoPickupButton.Name = "AutoPickupButton"
     AutoPickupButton.Size = UDim2.new(0, 220, 0, 40)
     AutoPickupButton.Position = UDim2.new(0.5, -110, 0, 50)
     AutoPickupButton.BackgroundColor3 = Color3.fromRGB(60, 60, 70)
@@ -243,7 +213,6 @@ local function createGUI()
     
     -- Manual Pickup Button
     local PickupButton = Instance.new("TextButton")
-    PickupButton.Name = "PickupButton"
     PickupButton.Size = UDim2.new(0, 220, 0, 40)
     PickupButton.Position = UDim2.new(0.5, -110, 0, 100)
     PickupButton.BackgroundColor3 = Color3.fromRGB(70, 70, 80)
@@ -261,15 +230,11 @@ local function createGUI()
     PickupCorner.CornerRadius = UDim.new(0, 6)
     PickupCorner.Parent = PickupButton
     
-    -- ==================== GUN PICKUP FUNCTIONS ====================
-    
-    -- FUNCTION TO FIND THE DROPPED GUN
+    -- ==================== GUN FUNCTIONS ====================
     local function findDroppedGun()
-        -- Common names for the dropped gun in MM2
         local possibleGunNames = {"Dropped Gun", "Gun", "ToolGun", "Weapon"}
         
         for _, child in pairs(workspace:GetChildren()) do
-            -- Check if it's a model with the right name
             if child:IsA("Model") then
                 for _, name in pairs(possibleGunNames) do
                     if child.Name == name then
@@ -280,7 +245,6 @@ local function createGUI()
                     end
                 end
             end
-            -- Also check for parts directly
             if child:IsA("BasePart") then
                 for _, name in pairs(possibleGunNames) do
                     if child.Name == name then
@@ -290,7 +254,6 @@ local function createGUI()
             end
         end
         
-        -- Alternative: Look for gun by attribute
         for _, child in pairs(workspace:GetChildren()) do
             if child:IsA("Model") or child:IsA("BasePart") then
                 if child:GetAttribute("Gun") or child:GetAttribute("Dropped") then
@@ -298,18 +261,15 @@ local function createGUI()
                 end
             end
         end
-        
         return nil
     end
     
-    -- FUNCTION TO TELEPORT TO GUN AND PICK IT UP
     local function pickupGun()
-        if isPickingUp or isTeleporting then 
+        if isPickingUp then 
             createToastNotification("⏳ Already picking up gun!", "warning")
             return 
         end
         
-        -- Make sure character exists
         local char = Player.Character
         if not char then
             createToastNotification("❌ Character not found!", "error")
@@ -328,7 +288,6 @@ local function createGUI()
             return
         end
         
-        -- Get gun position
         local gunPosition = nil
         local targetPart = nil
         
@@ -350,23 +309,16 @@ local function createGUI()
         isPickingUp = true
         createToastNotification("🎯 Teleporting to gun...", "info")
         
-        -- Save original position
         originalPosition = rootPart.Position
+        rootPart.CFrame = CFrame.new(gunPosition + Vector3.new(0, 1, 0))
         
-        -- Teleport directly to the gun
-        local targetCFrame = CFrame.new(gunPosition + Vector3.new(0, 1, 0))
-        rootPart.CFrame = targetCFrame
-        
-        -- Wait a moment for the pickup to register
         task.wait(0.2)
         
-        -- Try to trigger pickup by touching the gun
         if targetPart and targetPart:FindFirstChild("TouchInterest") then
             rootPart.CFrame = CFrame.new(gunPosition)
             task.wait(0.1)
         end
         
-        -- Teleport back to original position
         if originalPosition then
             rootPart.CFrame = CFrame.new(originalPosition)
             originalPosition = nil
@@ -377,49 +329,11 @@ local function createGUI()
         isPickingUp = false
     end
     
-    -- FUNCTION TO GRAB GUN VIA REMOTEEVENT
-    local function grabGun()
-        if isPickingUp or isTeleporting then 
-            createToastNotification("⏳ Already picking up gun!", "warning")
-            return 
-        end
-        isPickingUp = true
-        
-        local gun = findDroppedGun()
-        if not gun then
-            createToastNotification("❌ No gun found to grab!", "error")
-            isPickingUp = false
-            return
-        end
-        
-        -- Try to find the grab gun RemoteEvent
-        local grabRemote = ReplicatedStorage:FindFirstChild("GrabGun") or
-                           ReplicatedStorage:FindFirstChild("PickupGun") or
-                           ReplicatedStorage:FindFirstChild("StealGun") or
-                           ReplicatedStorage:FindFirstChild("Pickup")
-        
-        if grabRemote then
-            pcall(function()
-                grabRemote:FireServer(gun)
-                createToastNotification("✅ Gun grabbed via RemoteEvent!", "success")
-            end)
-            isPickingUp = false
-            return
-        end
-        
-        -- Fallback: Use teleport method
-        pickupGun()
-        isPickingUp = false
-    end
-    
-    -- MODIFIED PICKUP FUNCTION WITH BOTH METHODS
     local function smartPickup()
         pickupGun()
     end
     
-    -- ==================== GUI BUTTON FUNCTIONS ====================
-    
-    -- Close button functionality
+    -- ==================== BUTTON CONNECTIONS ====================
     CloseButton.MouseButton1Click:Connect(function()
         createToastNotification("🔴 GUI Removed", "info")
         if ScreenGui then
@@ -427,7 +341,6 @@ local function createGUI()
         end
     end)
     
-    -- Auto Pickup toggle
     AutoPickupButton.MouseButton1Click:Connect(function()
         autoPickupEnabled = not autoPickupEnabled
         AutoPickupButton.Text = "Auto Pickup Gun: " .. (autoPickupEnabled and "ON" or "OFF")
@@ -440,91 +353,58 @@ local function createGUI()
         end
     end)
     
-    -- Manual Pickup button
     PickupButton.MouseButton1Click:Connect(function()
         smartPickup()
     end)
     
     -- ==================== AUTO PICKUP LOOP ====================
-    
-    -- Auto pickup loop
     RunService.Heartbeat:Connect(function()
         if autoPickupEnabled then
             local gun = findDroppedGun()
             if gun then
                 smartPickup()
-                task.wait(0.8) -- Prevent spam
+                task.wait(0.8)
             end
         end
     end)
     
-    -- ==================== PRIORITY MAINTENANCE ====================
-    
-    -- Force GUI to stay on top of Roblox menus
-    local function maintainPriority()
-        if ScreenGui and ScreenGui.Parent then
-            ScreenGui.DisplayOrder = 999
-            ScreenGui.ZIndexBehavior = Enum.ZIndexBehavior.Global
-        end
-    end
-    
-    -- Check priority every few seconds to ensure it stays on top
-    RunService.Heartbeat:Connect(function()
-        maintainPriority()
-    end)
-    
     -- ==================== CHARACTER HANDLING ====================
-    
-    -- Update character references when character changes
     Player.CharacterAdded:Connect(function(newChar)
         Character = newChar
         HumanoidRootPart = newChar:WaitForChild("HumanoidRootPart")
         originalPosition = nil
-        isTeleporting = false
         isPickingUp = false
         createToastNotification("🔄 Character respawned!", "info")
     end)
     
-    print("MM2 Gun Pickup Script Loaded Successfully!")
-    print("All features are working:")
-    print("  ✅ GUI with priority over Roblox menus")
-    print("  ✅ Toast notifications")
-    print("  ✅ Auto pickup toggle")
-    print("  ✅ Manual pickup button")
-    print("  ✅ Teleport to gun and back")
-    
+    print("✅ MM2 Gun Pickup Script Loaded Successfully!")
     return ScreenGui
 end
 
--- ==================== INITIALIZE SCRIPT ====================
-
--- Wait for PlayerGui to be available
-local function waitForPlayerGui()
-    if not Player.PlayerGui then
+-- ==================== INITIALIZE ====================
+local success, err = pcall(function()
+    if Player and Player.PlayerGui then
+        createGUI()
+    else
+        -- Wait for PlayerGui
         Player:WaitForChild("PlayerGui")
+        createGUI()
     end
-    return true
-end
-
--- Check if we can create the GUI
-local success, errorMsg = pcall(function()
-    waitForPlayerGui()
-    createGUI()
 end)
 
 if not success then
-    warn("Failed to create GUI: " .. tostring(errorMsg))
-    -- Try again after a short delay
+    warn("❌ Failed to create GUI: " .. tostring(err))
     task.wait(1)
     pcall(function()
-        waitForPlayerGui()
-        createGUI()
+        if Player and Player.PlayerGui then
+            createGUI()
+        end
     end)
 end
 
-print("Script initialization complete!")
+print("✅ Script initialization complete!")
 
--- Return the GUI for external use
+-- Return controls
 return {
     ScreenGui = ScreenGui,
     ToggleAuto = function()
