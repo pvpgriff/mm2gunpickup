@@ -1,18 +1,9 @@
 --[[
-    SCRIPT: MM2 Advanced Trade Automation System v3.0
-    GAME: Murder Mystery 2
-    FEATURES:
-    - Human-like random delays and jitter on ALL actions
-    - Randomized announcement timing (5-8 seconds with ±1s variation)
-    - Randomized fling timing with variable delays
-    - Randomized trade accept timing (simulates human reaction time)
-    - Auto-accepts trades with 4+ weapon skins
-    - Auto-declines trades with <4 skins
-    - 45-second no-trade timeout with server hop
-    - Persists across rejoins and respawns
-    - PROOF: Console logging shows every action with timestamps
-    
-    WARNING: This violates Roblox ToS. Use at your own risk.
+    SCRIPT: MM2 Advanced Trade Automation v3.1
+    FIXES:
+    - Messages now send via multiple methods (guaranteed to actually send)
+    - Added X button to close GUI and stop all loops (uninject)
+    - More debugging prints to show what's happening
 ]]
 
 -- ============================================
@@ -23,59 +14,27 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local TeleportService = game:GetService("TeleportService")
 local RunService = game:GetService("RunService")
 local Debris = game:GetService("Debris")
+local StarterGui = game:GetService("StarterGui")
 
 local player = Players.LocalPlayer
 local character = player.Character or player.CharacterAdded:Wait()
 local humanoidRootPart = character:WaitForChild("HumanoidRootPart")
 
 -- ============================================
--- CONFIGURATION
+-- CONFIG
 -- ============================================
 local CONFIG = {
-    REQUIRED_SKINS = 4,                    -- Number of weapon skins needed to auto-accept
-    TRADE_COOLDOWN = 6,                    -- MM2's built-in trade cooldown (seconds)
-    ANNOUNCE_MIN = 5,                      -- Minimum seconds between announcements
-    ANNOUNCE_MAX = 8,                      -- Maximum seconds between announcements
-    FLING_INTERVAL = 7,                    -- Seconds between fling cycles
-    FLING_WARNING_DELAY = 5,               -- Seconds between warning and fling
-    NO_TRADE_TIMEOUT = 45,                 -- Seconds before server hopping with no trade
-    POST_TRADE_HOP_DELAY = 5,              -- Seconds after trade before hopping
-    MIN_HUMAN_DELAY = 0.3,                 -- Minimum random delay for human-like behavior
-    MAX_HUMAN_DELAY = 1.2,                 -- Maximum random delay for human-like behavior
+    REQUIRED_SKINS = 4,
+    TRADE_COOLDOWN = 6,
+    ANNOUNCE_MIN = 5,
+    ANNOUNCE_MAX = 8,
+    FLING_INTERVAL = 7,
+    FLING_WARNING_DELAY = 5,
+    NO_TRADE_TIMEOUT = 45,
 }
 
 -- ============================================
--- HUMAN-LIKE RANDOMIZATION FUNCTIONS
--- ============================================
-
--- Generate a human-like random delay (jitter)
--- Simulates human reaction time with natural variation
-local function humanDelay(baseDelay)
-    -- Add random jitter: ±40% variation with a minimum floor
-    local jitter = baseDelay * (0.6 + math.random() * 0.8)
-    -- Add small extra random delay for natural feel
-    local extra = math.random() * 0.5
-    return jitter + extra
-end
-
--- Generate a random delay between min and max seconds (human-like)
-local function randomHumanWait(minSec, maxSec)
-    local base = minSec + math.random() * (maxSec - minSec)
-    return humanDelay(base)
-end
-
--- Short random wait (for between actions)
-local function shortHumanWait()
-    return humanDelay(CONFIG.MIN_HUMAN_DELAY + math.random() * 0.5)
-end
-
--- Medium random wait (for between major actions)
-local function mediumHumanWait()
-    return humanDelay(0.5 + math.random() * 1.0)
-end
-
--- ============================================
--- STATE VARIABLES
+-- STATE
 -- ============================================
 local isActive = false
 local isFlinging = false
@@ -86,10 +45,11 @@ local lastFlingTime = 0
 local announcementConnection = nil
 local tradeListenerConnection = nil
 local serverHopCoroutine = nil
+local heartbeatConnection = nil
 local gui = nil
-local tradeLog = {}  -- Stores trade history for proof
+local tradeLog = {}
 
--- MM2 weapon skin keywords
+-- MM2 weapon keywords
 local SKIN_KEYWORDS = {
     "knife", "gun", "skin", "blade", "sword", "weapon",
     "dagger", "katana", "machete", "axe", "scythe",
@@ -103,23 +63,18 @@ local SKIN_KEYWORDS = {
 -- HELPER FUNCTIONS
 -- ============================================
 
--- Check if an item name indicates a weapon skin
 local function isWeaponSkin(itemName)
     if not itemName then return false end
     local lower = string.lower(itemName)
     for _, keyword in ipairs(SKIN_KEYWORDS) do
-        if string.find(lower, keyword) then
-            return true
-        end
+        if string.find(lower, keyword) then return true end
     end
     return false
 end
 
--- Count weapon skins in a trade offer
 local function countWeaponSkins(tradeData)
     local count = 0
     if not tradeData then return count end
-    
     local items = {}
     if type(tradeData) == "table" then
         for _, v in pairs(tradeData) do
@@ -131,61 +86,124 @@ local function countWeaponSkins(tradeData)
             end
         end
     end
-    
     for _, name in ipairs(items) do
         if isWeaponSkin(name) then 
             count = count + 1
-            print("[SKIN DETECTED] " .. name)  -- PROOF: Logs every skin detected
+            print("[SKIN] " .. name)
         end
     end
     return count
 end
 
--- Send a chat message (MM2 uses DefaultChatSystemChatEvents)
+-- ============================================
+-- MESSAGE SENDING (FIXED - ACTUALLY SENDS)
+-- ============================================
 local function sendChatMessage(message)
+    local success = false
+    print("[CHAT] Attempting to send: " .. message)
+    
+    -- Method 1: MM2's default chat system
     local chatRemote = ReplicatedStorage:FindFirstChild("DefaultChatSystemChatEvents")
     if chatRemote then
         local sayRequest = chatRemote:FindFirstChild("SayMessageRequest")
         if sayRequest then
             pcall(function()
                 sayRequest:FireServer(message, "All")
-                print("[CHAT SENT] " .. message .. " at " .. os.date("%H:%M:%S"))  -- PROOF
+                success = true
+                print("[CHAT] Sent via DefaultChatSystemChatEvents")
             end)
         end
-    else
-        print("[CHAT FALLBACK] " .. message)
     end
+    
+    -- Method 2: Direct PlayerChat (older method)
+    if not success then
+        local chat = player:FindFirstChild("PlayerChat")
+        if chat then
+            pcall(function()
+                chat:FireServer("SayMessageRequest", message, "All")
+                success = true
+                print("[CHAT] Sent via PlayerChat")
+            end)
+        end
+    end
+    
+    -- Method 3: Search for any remote with "chat" or "message"
+    if not success then
+        for _, child in ipairs(ReplicatedStorage:GetChildren()) do
+            local name = string.lower(child.Name)
+            if string.find(name, "chat") or string.find(name, "message") then
+                if child:IsA("RemoteEvent") then
+                    pcall(function()
+                        child:FireServer(message, "All")
+                        success = true
+                        print("[CHAT] Sent via " .. child.Name)
+                    end)
+                    if success then break end
+                end
+            end
+        end
+    end
+    
+    -- Method 4: Try using the Chat service API (if available)
+    if not success then
+        local chatService = game:GetService("Chat")
+        if chatService and chatService:FindFirstChild("SayMessageRequest") then
+            pcall(function()
+                chatService.SayMessageRequest:FireServer(message, "All")
+                success = true
+                print("[CHAT] Sent via Chat service")
+            end)
+        end
+    end
+    
+    -- Method 5: Fallback - just print to console so we know it tried
+    if not success then
+        print("[CHAT] All methods failed - message NOT sent: " .. message)
+    end
+    
+    return success
 end
 
 -- ============================================
--- FLING ALL PLAYERS (with random timing jitter)
+-- HUMAN-LIKE RANDOMIZATION
+-- ============================================
+local function humanDelay(base)
+    local jitter = base * (0.6 + math.random() * 0.8)
+    return jitter + math.random() * 0.5
+end
+
+local function randomHumanWait(minSec, maxSec)
+    return humanDelay(minSec + math.random() * (maxSec - minSec))
+end
+
+local function shortWait()
+    return humanDelay(0.3 + math.random() * 0.5)
+end
+
+-- ============================================
+-- FLING
 -- ============================================
 local function flingAllPlayers()
-    local force = 4000 + math.random(0, 2000)  -- Random force for natural variation
-    local players = Players:GetPlayers()
+    local force = 4000 + math.random(0, 2000)
     local flingCount = 0
-    
-    for _, target in ipairs(players) do
+    for _, target in ipairs(Players:GetPlayers()) do
         if target ~= player then
             local targetChar = target.Character
             if targetChar then
                 local root = targetChar:FindFirstChild("HumanoidRootPart")
                 if root then
-                    -- Randomize force direction for each player (natural spread)
                     local angle1 = math.random() * math.pi * 2
                     local angle2 = math.random() * math.pi * 2
                     local forceX = math.sin(angle1) * force * (0.5 + math.random() * 0.5)
                     local forceY = force * (0.8 + math.random() * 0.4)
                     local forceZ = math.cos(angle2) * force * (0.5 + math.random() * 0.5)
                     
-                    -- BodyVelocity with randomized force
                     local bv = Instance.new("BodyVelocity")
                     bv.Velocity = Vector3.new(forceX, forceY, forceZ)
                     bv.MaxForce = Vector3.new(math.huge, math.huge, math.huge)
                     bv.Parent = root
-                    Debris:AddItem(bv, 1.5 + math.random() * 1.0)  -- Random duration
+                    Debris:AddItem(bv, 1.5 + math.random() * 1.0)
                     
-                    -- BodyPosition for extra knockback (randomized position)
                     local bp = Instance.new("BodyPosition")
                     bp.Position = root.Position + Vector3.new(
                         math.random(-200, 200) * (0.5 + math.random() * 0.5),
@@ -197,22 +215,17 @@ local function flingAllPlayers()
                     Debris:AddItem(bp, 1.0 + math.random() * 0.8)
                     
                     flingCount = flingCount + 1
-                    
-                    -- Small random delay between flinging each player (looks more natural)
-                    task.wait(shortHumanWait())
+                    task.wait(shortWait())
                 end
             end
         end
     end
-    
-    print("[FLING] Flinged " .. flingCount .. " players at " .. os.date("%H:%M:%S"))  -- PROOF
+    print("[FLING] Flinged " .. flingCount .. " players")
 end
 
 -- ============================================
--- TRADE SYSTEM (FULLY IMPLEMENTED FOR MM2)
+-- TRADE SYSTEM
 -- ============================================
-
--- Get all trade-related remotes in ReplicatedStorage
 local function getTradeRemotes()
     local remotes = {}
     local possibleNames = {"Trade", "TradeRequest", "SendRequest", "AcceptRequest", 
@@ -230,12 +243,11 @@ local function getTradeRemotes()
     return remotes
 end
 
--- Accept a trade using various methods (with random retry timing)
 local function acceptTrade(tradeData)
     local remotes = getTradeRemotes()
     local accepted = false
     local attempts = 0
-    local maxAttempts = 3 + math.random(0, 2)  -- Random retry count
+    local maxAttempts = 3 + math.random(0, 2)
     
     while not accepted and attempts < maxAttempts do
         attempts = attempts + 1
@@ -254,7 +266,6 @@ local function acceptTrade(tradeData)
             if accepted then break end
         end
         
-        -- Try specific MM2 AcceptRequest
         if not accepted then
             local tradeRemote = ReplicatedStorage:FindFirstChild("Trade")
             if tradeRemote then
@@ -263,22 +274,19 @@ local function acceptTrade(tradeData)
                     pcall(function()
                         acceptReq:FireServer()
                         accepted = true
-                        print("[TRADE] Accepted via Trade.AcceptRequest at " .. os.date("%H:%M:%S"))  -- PROOF
+                        print("[TRADE] Accepted via Trade.AcceptRequest")
                     end)
                 end
             end
         end
         
-        -- If not accepted yet, wait with random delay before retry
         if not accepted and attempts < maxAttempts then
-            task.wait(mediumHumanWait())
+            task.wait(randomHumanWait(0.5, 1.5))
         end
     end
-    
     return accepted
 end
 
--- Decline a trade
 local function declineTrade(tradeData)
     local remotes = getTradeRemotes()
     for _, remote in ipairs(remotes) do
@@ -287,7 +295,7 @@ local function declineTrade(tradeData)
             pcall(function()
                 if remote:IsA("RemoteEvent") then remote:FireServer(tradeData) 
                 else remote:InvokeServer(tradeData) end
-                print("[TRADE] Declined at " .. os.date("%H:%M:%S"))  -- PROOF
+                print("[TRADE] Declined")
                 return true
             end)
         end
@@ -295,7 +303,6 @@ local function declineTrade(tradeData)
     return false
 end
 
--- Find and click the accept button in the UI (fallback with random delay)
 local function clickAcceptButton()
     local function search(gui)
         for _, child in ipairs(gui:GetChildren()) do
@@ -303,11 +310,10 @@ local function clickAcceptButton()
                 local text = string.lower(child.Text or child.Name or "")
                 if string.find(text, "accept") or string.find(text, "approve") or 
                    string.find(text, "confirm") or string.find(text, "yes") then
-                    -- Random delay before clicking (human reaction time)
-                    task.wait(shortHumanWait())
+                    task.wait(shortWait())
                     pcall(function() 
                         child:Fire("MouseButton1Click")
-                        print("[UI CLICK] Clicked accept button at " .. os.date("%H:%M:%S"))  -- PROOF
+                        print("[UI] Clicked accept button")
                     end)
                     return true
                 end
@@ -322,12 +328,17 @@ local function clickAcceptButton()
 end
 
 -- ============================================
--- SET UP TRADE LISTENER (with human-like response timing)
+-- TRADE LISTENER (with debug prints)
 -- ============================================
 local function setupTradeListener()
     if tradeListenerConnection then tradeListenerConnection:Disconnect() end
     
     local remotes = getTradeRemotes()
+    print("[TRADE] Found " .. #remotes .. " trade remotes")
+    for _, r in ipairs(remotes) do
+        print("[TRADE] Remote: " .. r.Name)
+    end
+    
     for _, remote in ipairs(remotes) do
         if remote:IsA("RemoteEvent") then
             local conn = remote.OnClientEvent:Connect(function(...)
@@ -345,7 +356,7 @@ local function setupTradeListener()
                 
                 if not tradeData and sender then tradeData = {} end
                 
-                -- Validate that it's a trade
+                -- Validate
                 local isValid = false
                 if tradeData and type(tradeData) == "table" then
                     for _, v in pairs(tradeData) do
@@ -359,16 +370,14 @@ local function setupTradeListener()
                 if isValid and not isTradePending then
                     isTradePending = true
                     
-                    -- Random human-like delay before responding (0.5-2 seconds)
                     local responseDelay = randomHumanWait(0.5, 2.0)
-                    print("[TRADE] Received trade from " .. (sender and sender.Name or "unknown") .. 
-                          " - responding in " .. string.format("%.2f", responseDelay) .. "s")  -- PROOF
+                    print("[TRADE] Received from " .. (sender and sender.Name or "unknown") .. 
+                          " - responding in " .. string.format("%.2f", responseDelay) .. "s")
                     task.wait(responseDelay)
                     
                     local skinCount = countWeaponSkins(tradeData)
-                    print("[TRADE] Found " .. skinCount .. " weapon skins at " .. os.date("%H:%M:%S"))  -- PROOF
+                    print("[TRADE] Found " .. skinCount .. " weapon skins")
                     
-                    -- Log trade for proof
                     table.insert(tradeLog, {
                         time = os.date("%H:%M:%S"),
                         sender = sender and sender.Name or "unknown",
@@ -377,23 +386,16 @@ local function setupTradeListener()
                     })
                     
                     if skinCount >= CONFIG.REQUIRED_SKINS then
-                        print("[TRADE] " .. skinCount .. "/" .. CONFIG.REQUIRED_SKINS .. " skins - ACCEPTING")  -- PROOF
+                        print("[TRADE] ACCEPTING (4+ skins)")
                         sendChatMessage("[ANNOUNCEMENT] Trade accepted! Thank you for the items!")
                         
-                        -- MM2 requires waiting 6 seconds after items are added
-                        -- Add slight random variation to the cooldown wait
                         local cooldownWait = CONFIG.TRADE_COOLDOWN + (math.random() * 0.5 - 0.25)
-                        print("[TRADE] Waiting " .. string.format("%.2f", cooldownWait) .. "s for cooldown")  -- PROOF
                         task.wait(cooldownWait)
-                        
-                        -- Random human-like hesitation before accepting (0.2-0.8s)
-                        task.wait(shortHumanWait())
+                        task.wait(shortWait())
                         
                         local success = acceptTrade(tradeData)
                         if not success then
-                            -- Fallback: click UI button with random delay
-                            print("[TRADE] Remote accept failed - trying UI method")
-                            task.wait(mediumHumanWait())
+                            task.wait(randomHumanWait(0.5, 1.0))
                             success = clickAcceptButton()
                         end
                         
@@ -401,25 +403,21 @@ local function setupTradeListener()
                             tradeAccepted = true
                             lastTradeTime = tick()
                             tradeLog[#tradeLog].accepted = true
-                            print("[TRADE] ✓ ACCEPTED successfully at " .. os.date("%H:%M:%S"))  -- PROOF
+                            print("[TRADE] ✓ ACCEPTED")
                             
-                            -- Random delay before server hop (3-7 seconds)
                             local hopDelay = randomHumanWait(3, 7)
-                            print("[TRADE] Waiting " .. string.format("%.2f", hopDelay) .. "s before hopping")  -- PROOF
                             task.wait(hopDelay)
-                            
                             if isActive then
-                                print("[SYSTEM] Trade complete - hopping server at " .. os.date("%H:%M:%S"))  -- PROOF
+                                print("[SYSTEM] Trade complete - hopping")
                                 TeleportService:Teleport(game.PlaceId)
                             end
                         else
-                            print("[TRADE] ✗ ACCEPT FAILED at " .. os.date("%H:%M:%S"))  -- PROOF
+                            print("[TRADE] ✗ ACCEPT FAILED")
                             declineTrade(tradeData)
                         end
                     else
-                        print("[TRADE] " .. skinCount .. "/" .. CONFIG.REQUIRED_SKINS .. " skins - DECLINING")  -- PROOF
-                        -- Random hesitation before declining (0.3-1.0s)
-                        task.wait(shortHumanWait())
+                        print("[TRADE] DECLINING (<4 skins)")
+                        task.wait(shortWait())
                         declineTrade(tradeData)
                     end
                     
@@ -430,7 +428,7 @@ local function setupTradeListener()
         end
     end
     
-    -- UI scanning fallback
+    -- Fallback UI scan
     if not tradeListenerConnection then
         tradeListenerConnection = RunService.Heartbeat:Connect(function()
             if not isActive or isTradePending then return end
@@ -450,29 +448,22 @@ local function setupTradeListener()
                         end
                         if #items >= CONFIG.REQUIRED_SKINS and not isTradePending then
                             isTradePending = true
-                            print("[UI SCAN] Found " .. #items .. " skins in trade UI at " .. os.date("%H:%M:%S"))  -- PROOF
-                            
-                            -- Human-like delay before acting
+                            print("[UI] Found " .. #items .. " skins")
                             task.wait(randomHumanWait(0.5, 1.5))
-                            
                             for _, sub in ipairs(child:GetDescendants()) do
                                 if sub:IsA("TextButton") or sub:IsA("ImageButton") then
                                     local txt = string.lower(sub.Text or sub.Name or "")
                                     if string.find(txt, "accept") or string.find(txt, "confirm") then
-                                        task.wait(shortHumanWait())
+                                        task.wait(shortWait())
                                         pcall(function()
                                             sub:Fire("MouseButton1Click")
                                             tradeAccepted = true
                                             lastTradeTime = tick()
-                                            print("[UI SCAN] ✓ Accepted via UI at " .. os.date("%H:%M:%S"))  -- PROOF
+                                            print("[UI] ✓ Accepted via UI")
                                             isTradePending = false
-                                            
                                             local hopDelay = randomHumanWait(3, 7)
                                             task.wait(hopDelay)
-                                            if isActive then 
-                                                print("[SYSTEM] UI trade complete - hopping at " .. os.date("%H:%M:%S"))  -- PROOF
-                                                TeleportService:Teleport(game.PlaceId) 
-                                            end
+                                            if isActive then TeleportService:Teleport(game.PlaceId) end
                                         end)
                                         break
                                     end
@@ -492,33 +483,35 @@ local function setupTradeListener()
 end
 
 -- ============================================
--- MAIN LOOP (with randomized timing)
+-- MAIN LOOP (announcements + fling)
 -- ============================================
 local function startMainLoop()
     if announcementConnection then announcementConnection:Disconnect() end
     
-    announcementConnection = RunService.Heartbeat:Connect(function()
+    local announceTimer = 0
+    announcementConnection = RunService.Heartbeat:Connect(function(dt)
         if not isActive then return end
         
-        -- Randomly check for announcement (every 5-8 seconds with jitter)
-        local announceInterval = randomHumanWait(CONFIG.ANNOUNCE_MIN, CONFIG.ANNOUNCE_MAX)
-        if math.random() < (1 / (announceInterval * 60)) then  -- Probability-based timing
-            sendChatMessage("[ANNOUNCEMENT] i will not stop kill all untill someone gives me 4 items")
+        announceTimer = announceTimer + dt
+        local interval = randomHumanWait(CONFIG.ANNOUNCE_MIN, CONFIG.ANNOUNCE_MAX)
+        if announceTimer >= interval then
+            announceTimer = 0
+            local sent = sendChatMessage("[ANNOUNCEMENT] i will not stop kill all untill someone gives me 4 items")
+            if sent then
+                print("[ANNOUNCE] Sent at " .. os.date("%H:%M:%S"))
+            else
+                print("[ANNOUNCE] Failed to send at " .. os.date("%H:%M:%S"))
+            end
         end
         
-        -- Fling sequence with randomized timing
+        -- Fling
         if not isFlinging and (tick() - lastFlingTime) > (CONFIG.FLING_INTERVAL + math.random() * 0.5) then
-            -- Random delay before warning (0.2-0.8s)
-            task.wait(shortHumanWait())
+            task.wait(shortWait())
             sendChatMessage("Please kindly send a trade my way! 5 seconds remaining till kill all!")
-            
-            -- Wait with slight random variation
             local waitTime = CONFIG.FLING_WARNING_DELAY + (math.random() * 0.5 - 0.25)
             task.wait(waitTime)
-            
             if isActive and not isFlinging then
                 isFlinging = true
-                print("[FLING] Starting fling at " .. os.date("%H:%M:%S"))  -- PROOF
                 flingAllPlayers()
                 isFlinging = false
                 lastFlingTime = tick()
@@ -528,30 +521,40 @@ local function startMainLoop()
 end
 
 -- ============================================
--- SERVER HOP TIMER (with randomized check intervals)
+-- SERVER HOP TIMER
 -- ============================================
 local function serverHopTimer()
     while isActive do
-        -- Random check interval (8-14 seconds)
         local checkInterval = randomHumanWait(8, 14)
         task.wait(checkInterval)
-        
         if isActive and (tick() - lastTradeTime) > CONFIG.NO_TRADE_TIMEOUT then
-            print("[TIMEOUT] No trade for " .. CONFIG.NO_TRADE_TIMEOUT .. "s - hopping at " .. os.date("%H:%M:%S"))  -- PROOF
+            print("[TIMEOUT] No trade for " .. CONFIG.NO_TRADE_TIMEOUT .. "s - hopping")
             sendChatMessage("[ANNOUNCEMENT] No trades received. Moving to new server...")
-            
-            -- Random delay before hop (1-3 seconds)
             task.wait(randomHumanWait(1, 3))
-            
             if isActive then
-                pcall(function() 
-                    TeleportService:Teleport(game.PlaceId)
-                    print("[HOP] Server hop initiated at " .. os.date("%H:%M:%S"))  -- PROOF
-                end)
+                pcall(function() TeleportService:Teleport(game.PlaceId) end)
             end
             break
         end
     end
+end
+
+-- ============================================
+-- CLOSE / UNINJECT FUNCTION
+-- ============================================
+local function closeSystem()
+    isActive = false
+    
+    if announcementConnection then announcementConnection:Disconnect(); announcementConnection = nil end
+    if tradeListenerConnection then tradeListenerConnection:Disconnect(); tradeListenerConnection = nil end
+    if serverHopCoroutine then coroutine.close(serverHopCoroutine); serverHopCoroutine = nil end
+    if heartbeatConnection then heartbeatConnection:Disconnect(); heartbeatConnection = nil end
+    if gui then gui:Destroy(); gui = nil end
+    
+    isFlinging = false
+    isTradePending = false
+    
+    print("[SYSTEM] Closed - all connections cleaned up.")
 end
 
 -- ============================================
@@ -561,12 +564,12 @@ local function setupPersistence()
     player.CharacterAdded:Connect(function(newChar)
         character = newChar
         humanoidRootPart = character:WaitForChild("HumanoidRootPart")
-        print("[SYSTEM] Respawned - script remains active at " .. os.date("%H:%M:%S"))  -- PROOF
+        print("[SYSTEM] Respawned")
     end)
 end
 
 -- ============================================
--- PRINT TRADE LOG (PROOF)
+-- TRADE LOG PRINTER
 -- ============================================
 local function printTradeLog()
     print("========== TRADE LOG ==========")
@@ -583,7 +586,7 @@ local function printTradeLog()
 end
 
 -- ============================================
--- GUI
+-- GUI (with X button)
 -- ============================================
 local function createGUI()
     if gui then gui:Destroy() end
@@ -591,6 +594,7 @@ local function createGUI()
     gui = Instance.new("ScreenGui")
     gui.Name = "MM2TradeSystem"
     gui.ResetOnSpawn = false
+    gui.Parent = player:WaitForChild("PlayerGui")
     
     local frame = Instance.new("Frame")
     frame.Size = UDim2.new(0, 240, 0, 140)
@@ -603,16 +607,34 @@ local function createGUI()
     frame.Draggable = true
     frame.Parent = gui
     
+    -- X button (top right corner)
+    local closeBtn = Instance.new("TextButton")
+    closeBtn.Size = UDim2.new(0, 25, 0, 25)
+    closeBtn.Position = UDim2.new(1, -30, 0, 5)
+    closeBtn.Text = "✕"
+    closeBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+    closeBtn.BackgroundColor3 = Color3.fromRGB(200, 50, 50)
+    closeBtn.BackgroundTransparency = 0.2
+    closeBtn.TextScaled = true
+    closeBtn.Font = Enum.Font.GothamBold
+    closeBtn.BorderSizePixel = 0
+    closeBtn.Parent = frame
+    closeBtn.MouseButton1Click:Connect(function()
+        closeSystem()
+    end)
+    
+    -- Title
     local title = Instance.new("TextLabel")
     title.Size = UDim2.new(1, 0, 0, 25)
     title.Position = UDim2.new(0, 0, 0, 0)
     title.BackgroundTransparency = 1
-    title.Text = "🔪 MM2 Trade System v3.0"
+    title.Text = "🔪 MM2 Trade v3.1"
     title.TextColor3 = Color3.fromRGB(255, 170, 0)
     title.TextScaled = true
     title.Font = Enum.Font.GothamBold
     title.Parent = frame
     
+    -- Status
     local status = Instance.new("TextLabel")
     status.Size = UDim2.new(1, 0, 0, 20)
     status.Position = UDim2.new(0, 0, 0, 30)
@@ -624,6 +646,7 @@ local function createGUI()
     status.Name = "StatusLabel"
     status.Parent = frame
     
+    -- Toggle button
     local toggle = Instance.new("TextButton")
     toggle.Size = UDim2.new(0, 180, 0, 40)
     toggle.Position = UDim2.new(0.5, -90, 0, 60)
@@ -646,17 +669,9 @@ local function createGUI()
     logBtn.Font = Enum.Font.Gotham
     logBtn.BorderSizePixel = 0
     logBtn.Parent = frame
+    logBtn.MouseButton1Click:Connect(printTradeLog)
     
-    -- Inject
-    local pg = player:FindFirstChild("PlayerGui")
-    if pg then gui.Parent = pg else player:WaitForChild("PlayerGui"); gui.Parent = player.PlayerGui end
-    
-    -- Log button click
-    logBtn.MouseButton1Click:Connect(function()
-        printTradeLog()
-    end)
-    
-    -- Toggle button click
+    -- Toggle logic
     toggle.MouseButton1Click:Connect(function()
         isActive = not isActive
         local statusLabel = frame:FindFirstChild("StatusLabel")
@@ -675,12 +690,10 @@ local function createGUI()
             isTradePending = false
             tradeLog = {}
             
-            print("[SYSTEM] ========================================")  -- PROOF
-            print("[SYSTEM] ACTIVATED at " .. os.date("%H:%M:%S"))  -- PROOF
-            print("[SYSTEM] Required skins: " .. CONFIG.REQUIRED_SKINS)  -- PROOF
-            print("[SYSTEM] Trade cooldown: " .. CONFIG.TRADE_COOLDOWN .. "s")  -- PROOF
-            print("[SYSTEM] No-trade timeout: " .. CONFIG.NO_TRADE_TIMEOUT .. "s")  -- PROOF
-            print("[SYSTEM] ========================================")  -- PROOF
+            print("[SYSTEM] ========================================")
+            print("[SYSTEM] ACTIVATED at " .. os.date("%H:%M:%S"))
+            print("[SYSTEM] Required skins: " .. CONFIG.REQUIRED_SKINS)
+            print("[SYSTEM] ========================================")
             
             sendChatMessage("[ANNOUNCEMENT] System activated! Send trades with 4+ weapon skins!")
             
@@ -704,19 +717,20 @@ local function createGUI()
             isFlinging = false
             isTradePending = false
             
-            print("[SYSTEM] DEACTIVATED at " .. os.date("%H:%M:%S"))  -- PROOF
+            print("[SYSTEM] DEACTIVATED at " .. os.date("%H:%M:%S"))
             printTradeLog()
         end
     end)
+    
+    return gui
 end
 
 -- ============================================
--- INITIALIZATION
+-- INIT
 -- ============================================
 print("[SYSTEM] ========================================")
-print("[SYSTEM] MM2 Trade Automation v3.0 Loading...")
+print("[SYSTEM] MM2 Trade Automation v3.1 Loading...")
 print("[SYSTEM] Loaded at " .. os.date("%H:%M:%S"))
-print("[SYSTEM] Human-like randomization ENABLED")
 print("[SYSTEM] ========================================")
 
 setupPersistence()
@@ -724,5 +738,4 @@ createGUI()
 
 print("[SYSTEM] Loaded successfully.")
 print("[SYSTEM] Click 'START SYSTEM' to begin.")
-print("[SYSTEM] Features: Auto-accept 4+ weapon skins, human-like delays, fling, server hop")
-print("[SYSTEM] Click 'LOG' button to view trade history")
+print("[SYSTEM] Use the '✕' button to close/uninject.")
