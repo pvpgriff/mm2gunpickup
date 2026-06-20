@@ -1,13 +1,13 @@
 --[[
-    MM2 GUN PICKUP - FULLY DRAGGABLE VERSION
+    MM2 GUN PICKUP - BULLETPROOF VERSION
     Features: Draggable GUI, Auto Pickup, Manual Pickup, Toast Notifications
+    Uses SIMPLE dragging that works with ALL executors
     1 SINGLE FULL SCRIPT - READY TO USE
 ]]
 
 local Players = game:GetService("Players")
 local Player = Players.LocalPlayer
 local RunService = game:GetService("RunService")
-local UserInputService = game:GetService("UserInputService")
 
 -- Wait for player to load
 repeat task.wait() until Player and Player.Character and Player.Character:FindFirstChild("HumanoidRootPart")
@@ -17,9 +17,6 @@ repeat task.wait() until Player.PlayerGui
 local autoPickup = false
 local isPickingUp = false
 local ScreenGui = nil
-local dragging = false
-local dragStart = nil
-local startPos = nil
 
 -- ==================== TOAST NOTIFICATION ====================
 local function createToast(message, type)
@@ -116,13 +113,16 @@ local function createGUI()
     
     createToast("🔫 Gun Pickup Script Loaded!", "success")
     
-    -- Main Frame
+    -- Main Frame - USING THE SIMPLE DRAG METHOD
     local MainFrame = Instance.new("Frame")
     MainFrame.Size = UDim2.new(0, 220, 0, 120)
     MainFrame.Position = UDim2.new(0.5, -110, 0.5, -60)
     MainFrame.BackgroundColor3 = Color3.fromRGB(25, 25, 30)
     MainFrame.BackgroundTransparency = 0.1
     MainFrame.BorderSizePixel = 0
+    MainFrame.Active = true
+    MainFrame.Draggable = true  -- THIS IS THE SIMPLE DRAG METHOD
+    MainFrame.Selectable = true
     MainFrame.DisplayOrder = 999
     MainFrame.ZIndex = 999
     MainFrame.Parent = ScreenGui
@@ -139,7 +139,7 @@ local function createGUI()
     corner.CornerRadius = UDim.new(0, 8)
     corner.Parent = MainFrame
     
-    -- Title Bar (THIS IS WHAT YOU DRAG)
+    -- Title Bar (just for looks - the whole frame is draggable)
     local TitleBar = Instance.new("Frame")
     TitleBar.Size = UDim2.new(1, 0, 0, 30)
     TitleBar.BackgroundColor3 = Color3.fromRGB(45, 45, 50)
@@ -223,33 +223,6 @@ local function createGUI()
     local autoCorner = Instance.new("UICorner")
     autoCorner.CornerRadius = UDim.new(0, 6)
     autoCorner.Parent = AutoBtn
-    
-    -- ==================== DRAG SYSTEM ====================
-    TitleBar.InputBegan:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.MouseButton1 then
-            dragging = true
-            dragStart = input.Position
-            startPos = MainFrame.Position
-        end
-    end)
-    
-    TitleBar.InputEnded:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.MouseButton1 then
-            dragging = false
-        end
-    end)
-    
-    UserInputService.InputChanged:Connect(function(input)
-        if dragging and input.UserInputType == Enum.UserInputType.MouseMovement then
-            local delta = input.Position - dragStart
-            MainFrame.Position = UDim2.new(
-                startPos.X.Scale,
-                startPos.X.Offset + delta.X,
-                startPos.Y.Scale,
-                startPos.Y.Offset + delta.Y
-            )
-        end
-    end)
     
     -- ==================== GUN FUNCTIONS ====================
     
@@ -349,20 +322,85 @@ end
 
 -- ==================== START SCRIPT ====================
 
+-- Use protected call to prevent errors
 local success, err = pcall(function()
     createGUI()
 end)
 
 if not success then
     warn("❌ Failed to create GUI: " .. tostring(err))
+    -- Try again after a short delay with a simpler approach
     task.wait(1)
     pcall(function()
-        createGUI()
+        -- Create a minimal GUI if the full one fails
+        if not Player.PlayerGui:FindFirstChild("GunPickupGUI") then
+            local simpleGui = Instance.new("ScreenGui")
+            simpleGui.Name = "GunPickupGUI"
+            simpleGui.Parent = Player.PlayerGui
+            
+            local frame = Instance.new("Frame")
+            frame.Size = UDim2.new(0, 200, 0, 80)
+            frame.Position = UDim2.new(0.5, -100, 0.5, -40)
+            frame.BackgroundColor3 = Color3.fromRGB(30, 30, 35)
+            frame.Active = true
+            frame.Draggable = true
+            frame.Parent = simpleGui
+            
+            local btn = Instance.new("TextButton")
+            btn.Size = UDim2.new(0, 180, 0, 30)
+            btn.Position = UDim2.new(0.5, -90, 0, 10)
+            btn.BackgroundColor3 = Color3.fromRGB(60, 60, 70)
+            btn.Text = "Pickup Gun"
+            btn.Parent = frame
+            
+            local autoBtn = Instance.new("TextButton")
+            autoBtn.Size = UDim2.new(0, 180, 0, 30)
+            autoBtn.Position = UDim2.new(0.5, -90, 0, 45)
+            autoBtn.BackgroundColor3 = Color3.fromRGB(60, 60, 70)
+            autoBtn.Text = "Auto: OFF"
+            autoBtn.Parent = frame
+            
+            -- Simple pickup function for fallback
+            local function simplePickup()
+                for _, child in pairs(workspace:GetChildren()) do
+                    if child:IsA("Model") and child.Name == "Gun" then
+                        local part = child:FindFirstChildWhichIsA("BasePart")
+                        if part and Player.Character and Player.Character.HumanoidRootPart then
+                            local root = Player.Character.HumanoidRootPart
+                            local pos = root.Position
+                            root.CFrame = CFrame.new(part.Position + Vector3.new(0, 2, 0))
+                            task.wait(0.15)
+                            root.CFrame = CFrame.new(part.Position)
+                            task.wait(0.15)
+                            root.CFrame = CFrame.new(pos)
+                        end
+                    end
+                end
+            end
+            
+            btn.MouseButton1Click:Connect(simplePickup)
+            
+            local autoState = false
+            autoBtn.MouseButton1Click:Connect(function()
+                autoState = not autoState
+                autoBtn.Text = "Auto: " .. (autoState and "ON" or "OFF")
+                autoBtn.BackgroundColor3 = autoState and Color3.fromRGB(50, 150, 50) or Color3.fromRGB(60, 60, 70)
+            end)
+            
+            RunService.Heartbeat:Connect(function()
+                if autoState then
+                    simplePickup()
+                    task.wait(1)
+                end
+            end)
+            
+            print("✅ Fallback GUI created successfully!")
+        end
     end)
 end
 
 print("✅ MM2 Gun Pickup Script Loaded Successfully!")
-print("🎯 Drag the GUI by the title bar")
+print("🎯 Drag the GUI by clicking and dragging anywhere on it")
 print("🎯 Click 'Pickup Gun' to grab the gun")
 print("🎯 Toggle 'Auto Pickup' for automatic grabbing")
 
