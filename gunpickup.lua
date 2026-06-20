@@ -1,5 +1,5 @@
 --[[
-    MM2 GUN PICKUP - COMPLETE DRAGGABLE SCRIPT
+    MM2 GUN PICKUP - FULLY DRAGGABLE VERSION
     Features: Draggable GUI, Auto Pickup, Manual Pickup, Toast Notifications
     1 SINGLE FULL SCRIPT - READY TO USE
 ]]
@@ -7,6 +7,7 @@
 local Players = game:GetService("Players")
 local Player = Players.LocalPlayer
 local RunService = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
 
 -- Wait for player to load
 repeat task.wait() until Player and Player.Character and Player.Character:FindFirstChild("HumanoidRootPart")
@@ -16,6 +17,9 @@ repeat task.wait() until Player.PlayerGui
 local autoPickup = false
 local isPickingUp = false
 local ScreenGui = nil
+local dragging = false
+local dragStart = nil
+local startPos = nil
 
 -- ==================== TOAST NOTIFICATION ====================
 local function createToast(message, type)
@@ -119,8 +123,6 @@ local function createGUI()
     MainFrame.BackgroundColor3 = Color3.fromRGB(25, 25, 30)
     MainFrame.BackgroundTransparency = 0.1
     MainFrame.BorderSizePixel = 0
-    MainFrame.Active = true
-    MainFrame.Draggable = true
     MainFrame.DisplayOrder = 999
     MainFrame.ZIndex = 999
     MainFrame.Parent = ScreenGui
@@ -137,7 +139,7 @@ local function createGUI()
     corner.CornerRadius = UDim.new(0, 8)
     corner.Parent = MainFrame
     
-    -- Title Bar
+    -- Title Bar (THIS IS WHAT YOU DRAG)
     local TitleBar = Instance.new("Frame")
     TitleBar.Size = UDim2.new(1, 0, 0, 30)
     TitleBar.BackgroundColor3 = Color3.fromRGB(45, 45, 50)
@@ -221,6 +223,33 @@ local function createGUI()
     local autoCorner = Instance.new("UICorner")
     autoCorner.CornerRadius = UDim.new(0, 6)
     autoCorner.Parent = AutoBtn
+    
+    -- ==================== DRAG SYSTEM ====================
+    TitleBar.InputBegan:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 then
+            dragging = true
+            dragStart = input.Position
+            startPos = MainFrame.Position
+        end
+    end)
+    
+    TitleBar.InputEnded:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 then
+            dragging = false
+        end
+    end)
+    
+    UserInputService.InputChanged:Connect(function(input)
+        if dragging and input.UserInputType == Enum.UserInputType.MouseMovement then
+            local delta = input.Position - dragStart
+            MainFrame.Position = UDim2.new(
+                startPos.X.Scale,
+                startPos.X.Offset + delta.X,
+                startPos.Y.Scale,
+                startPos.Y.Offset + delta.Y
+            )
+        end
+    end)
     
     -- ==================== GUN FUNCTIONS ====================
     
