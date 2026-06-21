@@ -1,11 +1,32 @@
 local StarterGui = game:GetService("StarterGui")
+local UserInputService = game:GetService("UserInputService")
 
-while true do
-    StarterGui:SetCore("SendNotification", {
-        Title = "Notice",
-        Text = "we dont script here anymore",
-        Duration = 3
-    })
+local running = true
 
-    task.wait(3)
-end
+-- Press F to stop notifications
+UserInputService.InputBegan:Connect(function(input, gameProcessed)
+    if gameProcessed then return end
+
+    if input.KeyCode == Enum.KeyCode.F then
+        running = false
+
+        StarterGui:SetCore("SendNotification", {
+            Title = "Stopped",
+            Text = "Notifications disabled",
+            Duration = 3
+        })
+    end
+end)
+
+-- Notification loop
+task.spawn(function()
+    while running do
+        StarterGui:SetCore("SendNotification", {
+            Title = "Notice",
+            Text = "we dont script here anymore (press F to stop notifications)",
+            Duration = 3
+        })
+
+        task.wait(3)
+    end
+end)
