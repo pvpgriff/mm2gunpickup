@@ -1,11 +1,11 @@
--- DAWN HUB v6.1
+-- DAWN HUB v7.0 – TeleportData Blacklist (Persistent)
+-- Visited servers survive across teleports via Roblox TeleportData
 
--- Anti‑dup
 if getgenv().SCRIPT_RUNNING then return end
 getgenv().SCRIPT_RUNNING = true
 getgenv().KEEP_ALIVE = true
 
--- Persistence
+-- Persistence via queue_on_teleport (backup)
 pcall(function()
     if queue_on_teleport then
         queue_on_teleport([[
@@ -26,12 +26,123 @@ local TextChatService = game:GetService("TextChatService")
 local TeleportService = game:GetService("TeleportService")
 local TweenService = game:GetService("TweenService")
 local UserInputService = game:GetService("UserInputService")
+local HttpService = game:GetService("HttpService")
 
 local player = Players.LocalPlayer
 if not player then player = Players:WaitForChild("LocalPlayer") end
 local character = player.Character or player.CharacterAdded:Wait()
 
--- Config
+-- ===== TeleportData Blacklist =====
+-- Get visited servers from teleport data (survives reinjection)
+local function getVisitedServers()
+    local data = TeleportService:GetLocalPlayerTeleportData()
+    if data and data.visitedServers then
+        return data.visitedServers
+    end
+    return {}
+end
+
+-- Save visited servers to teleport data (persists across server hops)
+local function saveVisitedServers(visited)
+    local data = TeleportService:GetLocalPlayerTeleportData() or {}
+    data.visitedServers = visited
+    -- We can't directly save, but we'll pass it via TeleportOptions on hop
+    return data
+end
+
+-- Add current server to visited list
+local function addVisitedServer()
+    local visited = getVisitedServers()
+    local jobId = game.JobId
+    if jobId and jobId ~= "" then
+        local found = false
+        for _, id in ipairs(visited) do
+            if id == jobId then found = true; break end
+        end
+        if not found then
+            table.insert(visited, jobId)
+        end
+    end
+    return visited
+end
+
+-- Check if current server has been visited
+local function isVisited()
+    local visited = getVisitedServers()
+    local jobId = game.JobId
+    if not jobId or jobId == "" then return false end
+    for _, id in ipairs(visited) do
+        if id == jobId then return true end
+    end
+    return false
+end
+
+-- Clear visited list
+local function clearVisited()
+    -- We'll just reset by hopping without passing data
+    local options = Instance.new("TeleportOptions")
+    options:SetTeleportData({ visitedServers = {} })
+    pcall(function()
+        TeleportService:Teleport(game.PlaceId, player, options)
+    end)
+end
+
+-- Smart server hop using TeleportData
+local hopAttempts = 0
+local function serverHop()
+    -- Add current server to visited list
+    local visited = addVisitedServer()
+    hopAttempts = 0
+
+    -- Pass visited list via teleport data
+    local options = Instance.new("TeleportOptions")
+    options:SetTeleportData({
+        visitedServers = visited
+    })
+
+    pcall(function()
+        TeleportService:Teleport(game.PlaceId, player, options)
+    end)
+end
+
+-- Check visited on load (prevents rejoining same server)
+local function checkVisitedOnLoad()
+    if isVisited() then
+        hopAttempts = hopAttempts + 1
+        if hopAttempts <= 5 then
+            print("[BLACKLIST] Visited server. Hopping again (attempt " .. hopAttempts .. ")")
+            task.wait(1)
+            -- Pass updated visited list
+            local visited = getVisitedServers()
+            local options = Instance.new("TeleportOptions")
+            options:SetTeleportData({
+                visitedServers = visited
+            })
+            pcall(function()
+                TeleportService:Teleport(game.PlaceId, player, options)
+            end)
+        else
+            print("[BLACKLIST] Max attempts. Clearing blacklist.")
+            clearVisited()
+            hopAttempts = 0
+        end
+        return true
+    end
+    hopAttempts = 0
+    return false
+end
+
+-- Friend detection (optional)
+local function hasFriendsInServer()
+    for _, p in ipairs(Players:GetPlayers()) do
+        if p ~= player and p:IsFriendsWith(player.UserId) then
+            return true
+        end
+    end
+    return false
+end
+
+-- ===== CONFIG & STATE =====
 local CONFIG = {
     ANNOUNCE_MIN = 19, ANNOUNCE_MAX = 24,
     FLING_INTERVAL_MIN = 2, FLING_INTERVAL_MAX = 5,
@@ -43,7 +154,6 @@ local CONFIG = {
     ANTI_FLING = true,
 }
 
--- State
 local isActive = false
 local firstWarningSent = false
 local gui = nil
@@ -52,16 +162,14 @@ local flingCoroutine = nil
 local blacklistLabelRef = nil
 local isMinimized = false
 local fullSize = UDim2.new(0, 420, 0, 520)
-local minimizedSize = UDim2.new(0, 140, 0, 40)  -- title bar only
+local minimizedSize = UDim2.new(0, 140, 0, 40)
 
--- Persistent data
-if not getgenv().SERVER_BLACKLIST then getgenv().SERVER_BLACKLIST = {} end
 if getgenv().MM2_ACTIVE == nil then getgenv().MM2_ACTIVE = false end
 getgenv().OriginalPos = nil
 
 local Accent = Color3.fromRGB(185, 120, 255)
 
--- Core functions (unchanged)
+-- ===== CORE FUNCTIONS =====
 local function savePosition()
     local root = character and character:FindFirstChild("HumanoidRootPart")
     if root then getgenv().OriginalPos = root.CFrame end
@@ -103,39 +211,15 @@ local function sendChat(msg)
 end
 
 local function updateBlacklistCounter()
-    local count = 0
-    for _ in pairs(getgenv().SERVER_BLACKLIST) do count = count + 1 end
-    if blacklistLabelRef then blacklistLabelRef.Text = "🚫 " .. count end
+    local visited = getVisitedServers()
+    local count = #visited
+    if blacklistLabelRef then
+        blacklistLabelRef.Text = "🚫 " .. count
+    end
     return count
 end
 
-local function addBlacklist()
-    local id = game.JobId
-    if id and id ~= "" then
-        getgenv().SERVER_BLACKLIST[id] = true
-        updateBlacklistCounter()
-    end
-end
-
-local function isBlacklisted()
-    return getgenv().SERVER_BLACKLIST[game.JobId] == true
-end
-
-local function clearBlacklist()
-    getgenv().SERVER_BLACKLIST = {}
-    updateBlacklistCounter()
-end
-
-local function hasFriendsInServer()
-    for _, p in ipairs(Players:GetPlayers()) do
-        if p ~= player and p:IsFriendsWith(player.UserId) then
-            return true
-        end
-    end
-    return false
-end
-
--- FLING ENGINE (full)
+-- ===== FLING ENGINE =====
 getgenv().OldPos = nil
 getgenv().FPDH = workspace.FallenPartsDestroyHeight
 
@@ -262,7 +346,7 @@ local function flingAll()
     end
 end
 
--- Loops
+-- ===== LOOPS =====
 local function startFlingLoop()
     if flingCoroutine then coroutine.close(flingCoroutine) end
     flingCoroutine = coroutine.create(function()
@@ -300,7 +384,7 @@ local function startAnnounceLoop()
     end)
 end
 
--- System controls
+-- ===== SYSTEM CONTROLS =====
 local function startSystem()
     if isActive then return end
     isActive = true
@@ -327,38 +411,11 @@ local function closeSystem()
     if gui then gui:Destroy(); gui = nil end
 end
 
-local function serverHop()
-    addBlacklist()
-    task.wait(0.5)
-    pcall(function() TeleportService:Teleport(game.PlaceId) end)
-end
-
 local function reloadScript()
     if getgenv().SCRIPT_URL then
         pcall(function()
             loadstring(game:HttpGet(getgenv().SCRIPT_URL))()
         end)
-    end
-end
-
-local hopAttempts = 0
-local function checkBlacklistAndFriends()
-    if isBlacklisted() then
-        hopAttempts = hopAttempts + 1
-        if hopAttempts <= 5 then
-            task.wait(1)
-            pcall(function() TeleportService:Teleport(game.PlaceId) end)
-        else
-            clearBlacklist()
-            hopAttempts = 0
-        end
-        return
-    end
-    hopAttempts = 0
-    if hasFriendsInServer() then
-        addBlacklist()
-        task.wait(1)
-        pcall(function() TeleportService:Teleport(game.PlaceId) end)
     end
 end
 
@@ -407,7 +464,7 @@ local function createDawnHubGUI()
     border.Color = Accent
     border.Parent = window
 
-    -- Title bar (draggable)
+    -- Title bar
     local topBar = Instance.new("Frame")
     topBar.Size = UDim2.new(1, 0, 0, 40)
     topBar.BackgroundColor3 = Color3.fromRGB(18, 18, 24)
@@ -436,7 +493,7 @@ local function createDawnHubGUI()
         end
     end)
 
-    -- Logo (fixed position, stays in place during minimize)
+    -- Logo
     local logo = Instance.new("TextLabel")
     logo.Size = UDim2.new(0.5, 0, 1, 0)
     logo.Position = UDim2.new(0, 16, 0, 0)
@@ -448,7 +505,7 @@ local function createDawnHubGUI()
     logo.TextXAlignment = Enum.TextXAlignment.Left
     logo.Parent = topBar
 
-    -- macOS-style close button
+    -- Close button
     local closeBtn = Instance.new("TextButton")
     closeBtn.Size = UDim2.new(0, 28, 0, 28)
     closeBtn.Position = UDim2.new(1, -36, 0.5, -14)
@@ -481,14 +538,13 @@ local function createDawnHubGUI()
     minCorner.CornerRadius = UDim.new(1,0)
     minCorner.Parent = minBtn
 
-    -- Content container (will be hidden when minimized)
+    -- Content container
     local contentContainer = Instance.new("Frame")
     contentContainer.Size = UDim2.new(1, 0, 1, -40)
     contentContainer.Position = UDim2.new(0, 0, 0, 40)
     contentContainer.BackgroundTransparency = 1
     contentContainer.Parent = window
 
-    -- Build all content inside contentContainer (same as before)
     local pad = 20
 
     -- Status
@@ -573,7 +629,7 @@ local function createDawnHubGUI()
         TweenService:Create(startBtn, TweenInfo.new(0.15), {Size = startOriginalSize}):Play()
     end)
 
-    -- Secondary buttons row
+    -- Secondary buttons
     local secondaryRow = Instance.new("Frame")
     secondaryRow.Size = UDim2.new(1, -pad*2, 0, 44)
     secondaryRow.Position = UDim2.new(0, pad, 0, pad + 110)
@@ -801,7 +857,7 @@ local function createDawnHubGUI()
         end)
     end
 
-    -- Clear blacklist button
+    -- Clear blacklist button (uses TeleportData reset)
     local clearBtn = Instance.new("TextButton")
     clearBtn.Size = UDim2.new(0.4, 0, 0, 28)
     clearBtn.Position = UDim2.new(0.3, 0, 0, pad + 260 + 4*36 + 10)
@@ -816,7 +872,7 @@ local function createDawnHubGUI()
     local clearCorner = Instance.new("UICorner")
     clearCorner.CornerRadius = UDim.new(0, 8)
     clearCorner.Parent = clearBtn
-    clearBtn.MouseButton1Click:Connect(clearBlacklist)
+    clearBtn.MouseButton1Click:Connect(clearVisited)
 
     -- START/STOP logic
     startBtn.MouseButton1Click:Connect(function()
@@ -852,17 +908,15 @@ local function createDawnHubGUI()
 
     updateBlacklistCounter()
 
-    -- ===== MINIMIZE FUNCTION (smooth shrink to title) =====
+    -- Minimize function
     local function toggleMinimize()
         isMinimized = not isMinimized
         local targetSize = isMinimized and minimizedSize or fullSize
-        -- Center the window on screen
-        local centerOffset = isMinimized and -70 or -210  -- half of width
-        local verticalOffset = isMinimized and -20 or -260 -- half of height
+        local centerOffset = isMinimized and -70 or -210
+        local verticalOffset = isMinimized and -20 or -260
         local targetPos = UDim2.new(0.5, centerOffset, 0.5, verticalOffset)
 
         if isMinimized then
-            -- Hide content first, then shrink
             contentContainer.Visible = false
             TweenService:Create(window, TweenInfo.new(0.35, Enum.EasingStyle.Quad, Enum.EasingDirection.InOut), {
                 Size = targetSize,
@@ -870,12 +924,11 @@ local function createDawnHubGUI()
             }):Play()
             minBtn.Text = "+"
         else
-            -- Expand first, then show content
             TweenService:Create(window, TweenInfo.new(0.35, Enum.EasingStyle.Quad, Enum.EasingDirection.InOut), {
                 Size = targetSize,
                 Position = targetPos
             }):Play()
-            task.wait(0.35)  -- wait for animation to finish
+            task.wait(0.35)
             contentContainer.Visible = true
             minBtn.Text = "−"
         end
@@ -886,9 +939,23 @@ local function createDawnHubGUI()
 end
 
 -- ===== INIT =====
+-- Check visited on load BEFORE creating GUI
 spawn(function()
-    task.wait(2)
-    checkBlacklistAndFriends()
+    task.wait(1)
+    if checkVisitedOnLoad() then return end  -- if we hopped, script reloads
+
+    -- Also check friends
+    if hasFriendsInServer() then
+        print("[FRIEND AVOID] Friend detected. Hopping.")
+        local visited = addVisitedServer()
+        local options = Instance.new("TeleportOptions")
+        options:SetTeleportData({ visitedServers = visited })
+        task.wait(1)
+        pcall(function()
+            TeleportService:Teleport(game.PlaceId, player, options)
+        end)
+        return
+    end
 end)
 
 local success, err = pcall(createDawnHubGUI)
