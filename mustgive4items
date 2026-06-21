@@ -1,22 +1,16 @@
--- ===== DEBUG: Confirm script started =====
+-- ===== DEBUG =====
 print("SCRIPT: Started loading...")
 
 -- ===== RESET OLD STATE =====
 if getgenv().SCRIPT_RUNNING then
     print("SCRIPT: Detected old instance - resetting...")
-    if gui then
-        pcall(function() gui:Destroy() end)
-        gui = nil
-    end
+    if gui then pcall(function() gui:Destroy() end); gui = nil end
     getgenv().SCRIPT_RUNNING = false
-    print("SCRIPT: Reset complete.")
 end
-
 getgenv().SCRIPT_RUNNING = true
 print("SCRIPT: Anti-double inject passed.")
 
--- ===== SETUP =====
-print("SCRIPT: Setting up services...")
+-- ===== SERVICES =====
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
@@ -25,15 +19,10 @@ local TeleportService = game:GetService("TeleportService")
 local TweenService = game:GetService("TweenService")
 local UserInputService = game:GetService("UserInputService")
 
-print("SCRIPT: Getting local player...")
 local player = Players.LocalPlayer
-if not player then
-    print("SCRIPT: Waiting for LocalPlayer...")
-    player = Players:WaitForChild("LocalPlayer")
-end
+if not player then player = Players:WaitForChild("LocalPlayer") end
 print("SCRIPT: LocalPlayer found: " .. player.Name)
 
-print("SCRIPT: Waiting for Character...")
 local character = player.Character or player.CharacterAdded:Wait()
 print("SCRIPT: Character ready.")
 
@@ -49,7 +38,6 @@ local CONFIG = {
     FLING_ENABLED = true,
     RESET_POS = true,
     ANTI_FLING = true,
-    AUTO_REJOIN_ON_KICK = true,
 }
 
 -- ===== STATE =====
@@ -60,13 +48,9 @@ local announcementConnection = nil
 local flingCoroutine = nil
 
 -- ===== BLACKLIST =====
-if not getgenv().SERVER_BLACKLIST then
-    getgenv().SERVER_BLACKLIST = {}
-end
-if getgenv().MM2_ACTIVE == nil then
-    getgenv().MM2_ACTIVE = false
-end
-print("SCRIPT: State initialized. MM2_ACTIVE = " .. tostring(getgenv().MM2_ACTIVE))
+if not getgenv().SERVER_BLACKLIST then getgenv().SERVER_BLACKLIST = {} end
+if getgenv().MM2_ACTIVE == nil then getgenv().MM2_ACTIVE = false end
+print("SCRIPT: MM2_ACTIVE = " .. tostring(getgenv().MM2_ACTIVE))
 
 -- ===== POSITION =====
 getgenv().OriginalPos = nil
@@ -127,6 +111,16 @@ local function addBlacklist()
 end
 local function isBlacklisted()
     return getgenv().SERVER_BLACKLIST[game.JobId] == true
+end
+
+-- ===== FRIEND DETECTION =====
+local function hasFriendsInServer()
+    for _, p in ipairs(Players:GetPlayers()) do
+        if p ~= player and p:IsFriendsWith(player.UserId) then
+            return true
+        end
+    end
+    return false
 end
 
 -- ===== FLING =====
@@ -304,6 +298,7 @@ local function startSystem()
     sendChat("[ANNOUNCEMENT] i will not stop kill all untill someone gives me 4 items")
     startAnnounceLoop()
     startFlingLoop()
+    print("SYSTEM: Started.")
 end
 
 local function stopSystem()
@@ -312,6 +307,7 @@ local function stopSystem()
     if announcementConnection then announcementConnection:Disconnect(); announcementConnection = nil end
     if flingCoroutine then coroutine.close(flingCoroutine); flingCoroutine = nil end
     restorePosition()
+    print("SYSTEM: Stopped.")
 end
 
 local function closeSystem()
@@ -320,20 +316,43 @@ local function closeSystem()
     if gui then gui:Destroy(); gui = nil end
 end
 
+-- ===== S-HOP (with friend avoidance) =====
+local hopAttempts = 0
 local function serverHop()
     addBlacklist()
+    hopAttempts = 0
     pcall(function() TeleportService:Teleport(game.PlaceId) end)
+end
+
+-- This will be called after teleport (on reload)
+local function checkBlacklistAndFriends()
+    if isBlacklisted() then
+        print("BLACKLIST: Server is blacklisted – hopping again.")
+        task.wait(1)
+        pcall(function() TeleportService:Teleport(game.PlaceId) end)
+        return
+    end
+    if hasFriendsInServer() then
+        hopAttempts = hopAttempts + 1
+        if hopAttempts <= 5 then
+            print("FRIEND AVOID: Friend detected – hopping again. Attempt " .. hopAttempts)
+            addBlacklist() -- blacklist this server too
+            task.wait(1)
+            pcall(function() TeleportService:Teleport(game.PlaceId) end)
+        else
+            print("FRIEND AVOID: Max attempts reached – staying in server with friends.")
+        end
+    else
+        hopAttempts = 0
+        print("FRIEND AVOID: No friends in this server – good to go.")
+    end
 end
 
 -- ===== GUI CREATION =====
 print("SCRIPT: Starting GUI creation...")
 local function createGUI()
-    if gui then
-        pcall(function() gui:Destroy() end)
-        gui = nil
-    end
+    if gui then pcall(function() gui:Destroy() end); gui = nil end
 
-    print("SCRIPT: Creating new ScreenGui...")
     gui = Instance.new("ScreenGui")
     gui.Name = "MM2FlingGUI"
     gui.ResetOnSpawn = false
@@ -371,7 +390,7 @@ local function createGUI()
     corner.CornerRadius = UDim.new(0, 12)
     corner.Parent = window
 
-    -- TOP BAR
+    -- Top bar
     local topBar = Instance.new("Frame")
     topBar.Size = UDim2.new(1,0,0,32)
     topBar.BackgroundColor3 = Color3.fromRGB(10,10,13)
@@ -401,7 +420,7 @@ local function createGUI()
     closeBtn.Parent = topBar
     closeBtn.MouseButton1Click:Connect(closeSystem)
 
-    -- CONTENT
+    -- Content
     local content = Instance.new("Frame")
     content.Size = UDim2.new(1,-20,1,-50)
     content.Position = UDim2.new(0,10,0,42)
@@ -480,7 +499,7 @@ local function createGUI()
     blacklistLabel.Parent = row1
     gui.BlacklistLabel = blacklistLabel
 
-    -- Row 2: Info labels
+    -- Row 2: Info
     local row2 = Instance.new("Frame")
     row2.Size = UDim2.new(1,0,0,32)
     row2.Position = UDim2.new(0,0,0,46)
@@ -569,7 +588,7 @@ local function createGUI()
         end)
     end
 
-    -- Row 4: Fling Force Slider
+    -- Row 4: Slider
     local row4 = Instance.new("Frame")
     row4.Size = UDim2.new(1,0,0,30)
     row4.Position = UDim2.new(0,0,0,160)
@@ -647,53 +666,9 @@ local function createGUI()
         end
     end)
 
-    -- Row 5: Auto-Rejoin on Kick toggle
-    local row5 = Instance.new("Frame")
-    row5.Size = UDim2.new(1,0,0,28)
-    row5.Position = UDim2.new(0,0,0,195)
-    row5.BackgroundTransparency = 1
-    row5.Parent = content
+    -- Row 5: Auto-Rejoin on Kick toggle (removed since OnTeleport is gone)
 
-    local kickLabel = Instance.new("TextLabel")
-    kickLabel.Size = UDim2.new(0.6,0,1,0)
-    kickLabel.BackgroundTransparency = 1
-    kickLabel.Text = "Auto Rejoin on Kick"
-    kickLabel.TextColor3 = Color3.fromRGB(180,180,190)
-    kickLabel.TextScaled = true
-    kickLabel.Font = Enum.Font.Gotham
-    kickLabel.TextXAlignment = Enum.TextXAlignment.Left
-    kickLabel.Parent = row5
-
-    local kickToggle = Instance.new("TextButton")
-    kickToggle.Size = UDim2.new(0,22,0,20)
-    kickToggle.Position = UDim2.new(0.7,0,0.5,-10)
-    kickToggle.Text = ""
-    kickToggle.BackgroundColor3 = Color3.fromRGB(30,30,40)
-    kickToggle.BackgroundTransparency = 0.2
-    kickToggle.BorderSizePixel = 0
-    kickToggle.Parent = row5
-    local ktCorner = Instance.new("UICorner")
-    ktCorner.CornerRadius = UDim.new(0,5)
-    ktCorner.Parent = kickToggle
-
-    local kickFill = Instance.new("Frame")
-    kickFill.Size = UDim2.new(1,0,1,0)
-    kickFill.BackgroundColor3 = Color3.fromRGB(199,127,192)
-    kickFill.BackgroundTransparency = CONFIG.AUTO_REJOIN_ON_KICK and 0.1 or 1
-    kickFill.BorderSizePixel = 0
-    kickFill.Parent = kickToggle
-    local kfCorner = Instance.new("UICorner")
-    kfCorner.CornerRadius = UDim.new(0,5)
-    kfCorner.Parent = kickFill
-
-    local kickOn = CONFIG.AUTO_REJOIN_ON_KICK
-    kickToggle.MouseButton1Click:Connect(function()
-        kickOn = not kickOn
-        kickFill.BackgroundTransparency = kickOn and 0.1 or 1
-        CONFIG.AUTO_REJOIN_ON_KICK = kickOn
-    end)
-
-    -- Toggle button logic
+    -- Toggle button logic (start/stop)
     toggleBtn.MouseButton1Click:Connect(function()
         if isActive then
             stopSystem()
@@ -729,13 +704,13 @@ local function createGUI()
     return gui
 end
 
--- ===== CREATE THE GUI =====
+-- ===== CREATE GUI =====
 print("SCRIPT: Calling createGUI()...")
 local success, err = pcall(createGUI)
 if success then
     print("SCRIPT: GUI created successfully.")
 else
-    warn("SCRIPT: Failed to create GUI! Error: " .. tostring(err))
+    warn("SCRIPT: GUI creation failed: " .. tostring(err))
 end
 
 -- ===== PERSISTENCE =====
@@ -747,17 +722,10 @@ pcall(function()
     end
 end)
 
--- ===== BLACKLIST CHECK ON LOAD =====
-local function checkBlacklistAndRejoin()
-    if isBlacklisted() then
-        print("Blacklisted server detected – hopping again.")
-        task.wait(1)
-        pcall(function() TeleportService:Teleport(game.PlaceId) end)
-    end
-end
+-- ===== BLACKLIST & FRIEND CHECK AFTER LOAD =====
 spawn(function()
-    task.wait(1)
-    checkBlacklistAndRejoin()
+    task.wait(2) -- wait for script to fully load
+    checkBlacklistAndFriends()
 end)
 
 print("SCRIPT: Full load complete.")
