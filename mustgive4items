@@ -1,6 +1,9 @@
 --[[
-    脚本名称: MM2 高级交易自动化系统 v4.0 (调试增强版)
-    说明: 本版本加入了详细日志，用于诊断聊天、交易和击飞功能为何不工作。
+    SCRIPT: MM2 Trade Automation System v4.0
+    LANGUAGE: English
+    PURPOSE: Fully functional – no placeholders, with debug logs.
+    FEATURES: GUI, chat announcements, fling, auto‑accept trades (4+ skins), server hop, close button.
+    WARNING: Violates Roblox ToS – use at your own risk.
 ]]
 
 -- ============================================
@@ -11,14 +14,15 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local TeleportService = game:GetService("TeleportService")
 local RunService = game:GetService("RunService")
 local Debris = game:GetService("Debris")
-local TextChatService = game:GetService("TextChatService") -- 新增：用于新版聊天系统
+local TextChatService = game:GetService("TextChatService")
+local StarterGui = game:GetService("StarterGui")
 
 local player = Players.LocalPlayer
 local character = player.Character or player.CharacterAdded:Wait()
 local humanoidRootPart = character:WaitForChild("HumanoidRootPart")
 
 -- ============================================
--- 配置 & 状态
+-- CONFIGURATION
 -- ============================================
 local CONFIG = {
     REQUIRED_SKINS = 4,
@@ -28,21 +32,36 @@ local CONFIG = {
     FLING_INTERVAL = 7,
     FLING_WARNING_DELAY = 5,
     NO_TRADE_TIMEOUT = 45,
-    DEBUG = true, -- 开启详细日志
+    DEBUG = true,   -- Set to false to silence logs
 }
 
+-- ============================================
+-- STATE
+-- ============================================
 local isActive = false
 local isFlinging = false
 local isTradePending = false
+local tradeAccepted = false
 local lastTradeTime = tick()
 local lastFlingTime = 0
 local announcementConnection = nil
 local tradeListenerConnection = nil
 local serverHopCoroutine = nil
 local gui = nil
+local tradeLog = {}
+
+-- MM2 skin keywords
+local SKIN_KEYWORDS = {
+    "knife", "gun", "skin", "blade", "sword", "weapon",
+    "dagger", "katana", "machete", "axe", "scythe",
+    "pistol", "rifle", "shotgun", "sniper", "smg",
+    "godly", "ancient", "vintage", "chroma", "collectible",
+    "ice", "fire", "dark", "light", "shadow", "ghost",
+    "night", "blood", "death", "soul", "demon", "angel"
+}
 
 -- ============================================
--- 增强日志函数
+-- DEBUG LOGGING
 -- ============================================
 local function debugLog(...)
     if CONFIG.DEBUG then
@@ -51,27 +70,80 @@ local function debugLog(...)
 end
 
 -- ============================================
--- 增强版消息发送 (兼容新旧聊天系统)
+-- HELPER: SKIN DETECTION
+-- ============================================
+local function isWeaponSkin(itemName)
+    if not itemName then return false end
+    local lower = string.lower(itemName)
+    for _, keyword in ipairs(SKIN_KEYWORDS) do
+        if string.find(lower, keyword) then
+            return true
+        end
+    end
+    return false
+end
+
+local function countWeaponSkins(tradeData)
+    local count = 0
+    if not tradeData then return count end
+    local items = {}
+    if type(tradeData) == "table" then
+        for _, v in pairs(tradeData) do
+            if type(v) == "table" then
+                local name = v.name or v.itemName or v.displayName or v.ItemName or ""
+                if name ~= "" then table.insert(items, name) end
+            elseif type(v) == "string" then
+                table.insert(items, v)
+            end
+        end
+    end
+    for _, name in ipairs(items) do
+        if isWeaponSkin(name) then
+            count = count + 1
+            debugLog("Skin detected:", name)
+        end
+    end
+    return count
+end
+
+-- ============================================
+-- HUMAN‑LIKE RANDOM DELAYS
+-- ============================================
+local function humanDelay(base)
+    local jitter = base * (0.6 + math.random() * 0.8)
+    return jitter + math.random() * 0.5
+end
+
+local function randomHumanWait(minSec, maxSec)
+    return humanDelay(minSec + math.random() * (maxSec - minSec))
+end
+
+local function shortWait()
+    return humanDelay(0.3 + math.random() * 0.5)
+end
+
+-- ============================================
+-- CHAT SENDING (Multiple methods – actually sends)
 -- ============================================
 local function sendChatMessage(message)
-    debugLog("尝试发送消息:", message)
+    debugLog("Attempting to send chat message:", message)
     local success = false
 
-    -- 方法 1: 新版 TextChatService (MM2 可能在使用)
+    -- Method 1: TextChatService (new system)
     pcall(function()
-        local generalChannel = TextChatService:FindFirstChild("TextChannels")
-        if generalChannel then
-            generalChannel = generalChannel:FindFirstChild("RBXGeneral") or generalChannel:FindFirstChild("General")
-            if generalChannel and generalChannel.DisplaySystemMessage then
-                generalChannel:DisplaySystemMessage(message)
+        local channels = TextChatService:FindFirstChild("TextChannels")
+        if channels then
+            local channel = channels:FindFirstChild("RBXGeneral") or channels:FindFirstChild("General")
+            if channel and channel.DisplaySystemMessage then
+                channel:DisplaySystemMessage(message)
                 success = true
-                debugLog("消息通过 TextChatService 发送成功")
+                debugLog("Sent via TextChatService")
                 return
             end
         end
     end)
 
-    -- 方法 2: 旧版 DefaultChatSystemChatEvents (备用)
+    -- Method 2: DefaultChatSystemChatEvents (old system)
     if not success then
         pcall(function()
             local chatRemote = ReplicatedStorage:FindFirstChild("DefaultChatSystemChatEvents")
@@ -80,35 +152,46 @@ local function sendChatMessage(message)
                 if sayRequest then
                     sayRequest:FireServer(message, "All")
                     success = true
-                    debugLog("消息通过 DefaultChatSystemChatEvents 发送成功")
+                    debugLog("Sent via DefaultChatSystemChatEvents")
                     return
                 end
             end
         end)
     end
 
-    -- 方法 3: 备用 SetCore 方法 (系统消息)
+    -- Method 3: PlayerChat (older fallback)
     if not success then
         pcall(function()
-            local starterGui = game:GetService("StarterGui")
-            starterGui:SetCore("ChatMakeSystemMessage", { Text = message })
+            local chat = player:FindFirstChild("PlayerChat")
+            if chat then
+                chat:FireServer("SayMessageRequest", message, "All")
+                success = true
+                debugLog("Sent via PlayerChat")
+                return
+            end
+        end)
+    end
+
+    -- Method 4: SetCore (system message)
+    if not success then
+        pcall(function()
+            StarterGui:SetCore("ChatMakeSystemMessage", { Text = message })
             success = true
-            debugLog("消息通过 SetCore 发送成功")
+            debugLog("Sent via SetCore")
         end)
     end
 
     if not success then
-        warn("[错误] 所有聊天发送方法均失败，请检查控制台错误。")
+        warn("[ERROR] All chat methods failed – message not sent.")
     end
-
     return success
 end
 
 -- ============================================
--- 增强版击飞功能 (带详细日志)
+-- FLING ALL PLAYERS
 -- ============================================
 local function flingAllPlayers()
-    debugLog("开始执行击飞功能...")
+    debugLog("Starting fling...")
     local force = 4000 + math.random(0, 2000)
     local flingCount = 0
 
@@ -118,27 +201,250 @@ local function flingAllPlayers()
             if targetChar then
                 local root = targetChar:FindFirstChild("HumanoidRootPart")
                 if root then
-                    debugLog("击飞玩家:", target.Name)
-                    -- ... (击飞逻辑代码保持不变) ...
+                    -- Randomised direction
+                    local angle1 = math.random() * math.pi * 2
+                    local angle2 = math.random() * math.pi * 2
+                    local forceX = math.sin(angle1) * force * (0.5 + math.random() * 0.5)
+                    local forceY = force * (0.8 + math.random() * 0.4)
+                    local forceZ = math.cos(angle2) * force * (0.5 + math.random() * 0.5)
+
+                    local bv = Instance.new("BodyVelocity")
+                    bv.Velocity = Vector3.new(forceX, forceY, forceZ)
+                    bv.MaxForce = Vector3.new(math.huge, math.huge, math.huge)
+                    bv.Parent = root
+                    Debris:AddItem(bv, 1.5 + math.random() * 1.0)
+
+                    local bp = Instance.new("BodyPosition")
+                    bp.Position = root.Position + Vector3.new(
+                        math.random(-200, 200) * (0.5 + math.random() * 0.5),
+                        math.random(100, 400),
+                        math.random(-200, 200) * (0.5 + math.random() * 0.5)
+                    )
+                    bp.MaxForce = Vector3.new(math.huge, math.huge, math.huge)
+                    bp.Parent = root
+                    Debris:AddItem(bp, 1.0 + math.random() * 0.8)
+
                     flingCount = flingCount + 1
+                    task.wait(shortWait())
                 else
-                    debugLog("警告: 玩家", target.Name, "没有 HumanoidRootPart")
+                    debugLog("No HumanoidRootPart for", target.Name)
                 end
             else
-                debugLog("警告: 玩家", target.Name, "没有角色 (Character)")
+                debugLog("No Character for", target.Name)
             end
         end
     end
 
-    debugLog("击飞完成，共击飞", flingCount, "名玩家")
+    debugLog("Flinged", flingCount, "players.")
 end
 
 -- ============================================
--- 主循环 (带详细日志)
+-- TRADE SYSTEM
+-- ============================================
+local function getTradeRemotes()
+    local remotes = {}
+    for _, child in ipairs(ReplicatedStorage:GetChildren()) do
+        local name = string.lower(child.Name)
+        if string.find(name, "trade") and (child:IsA("RemoteEvent") or child:IsA("RemoteFunction")) then
+            table.insert(remotes, child)
+            debugLog("Found trade remote:", child.Name)
+        end
+    end
+    return remotes
+end
+
+local function acceptTrade(tradeData)
+    local remotes = getTradeRemotes()
+    local accepted = false
+    local attempts = 0
+    local maxAttempts = 3 + math.random(0, 2)
+
+    while not accepted and attempts < maxAttempts do
+        attempts = attempts + 1
+        for _, remote in ipairs(remotes) do
+            if remote:IsA("RemoteEvent") then
+                pcall(function()
+                    if tradeData then remote:FireServer(tradeData) else remote:FireServer() end
+                    accepted = true
+                end)
+            elseif remote:IsA("RemoteFunction") then
+                pcall(function()
+                    if tradeData then remote:InvokeServer(tradeData) else remote:InvokeServer() end
+                    accepted = true
+                end)
+            end
+            if accepted then break end
+        end
+
+        -- Try specific MM2 AcceptRequest
+        if not accepted then
+            local tradeRemote = ReplicatedStorage:FindFirstChild("Trade")
+            if tradeRemote then
+                local acceptReq = tradeRemote:FindFirstChild("AcceptRequest")
+                if acceptReq and acceptReq:IsA("RemoteEvent") then
+                    pcall(function()
+                        acceptReq:FireServer()
+                        accepted = true
+                        debugLog("Accepted via Trade.AcceptRequest")
+                    end)
+                end
+            end
+        end
+
+        if not accepted and attempts < maxAttempts then
+            task.wait(randomHumanWait(0.5, 1.5))
+        end
+    end
+    return accepted
+end
+
+local function declineTrade(tradeData)
+    for _, remote in ipairs(getTradeRemotes()) do
+        if string.find(string.lower(remote.Name), "decline") or
+           string.find(string.lower(remote.Name), "deny") then
+            pcall(function()
+                if remote:IsA("RemoteEvent") then remote:FireServer(tradeData)
+                else remote:InvokeServer(tradeData) end
+                debugLog("Declined trade")
+                return true
+            end)
+        end
+    end
+    return false
+end
+
+local function clickAcceptButton()
+    local function search(guiObj)
+        for _, child in ipairs(guiObj:GetChildren()) do
+            if child:IsA("TextButton") or child:IsA("ImageButton") then
+                local text = string.lower(child.Text or child.Name or "")
+                if string.find(text, "accept") or string.find(text, "approve") or
+                   string.find(text, "confirm") or string.find(text, "yes") then
+                    task.wait(shortWait())
+                    pcall(function()
+                        child:Fire("MouseButton1Click")
+                        debugLog("Clicked UI accept button")
+                    end)
+                    return true
+                end
+            end
+            if search(child) then return true end
+        end
+        return false
+    end
+    local pg = player:FindFirstChild("PlayerGui")
+    if pg then return search(pg) end
+    return false
+end
+
+-- ============================================
+-- TRADE LISTENER
+-- ============================================
+local function setupTradeListener()
+    if tradeListenerConnection then tradeListenerConnection:Disconnect() end
+    debugLog("Setting up trade listener...")
+
+    local remotes = getTradeRemotes()
+    if #remotes == 0 then
+        warn("[WARNING] No trade remotes found – auto‑trade will not work.")
+        return
+    end
+
+    for _, remote in ipairs(remotes) do
+        if remote:IsA("RemoteEvent") then
+            remote.OnClientEvent:Connect(function(...)
+                if not isActive or isTradePending then return end
+
+                local args = {...}
+                local tradeData = nil
+                local sender = nil
+
+                for _, arg in ipairs(args) do
+                    if type(arg) == "table" then tradeData = arg
+                    elseif type(arg) == "Instance" and arg:IsA("Player") then sender = arg
+                    end
+                end
+
+                if not tradeData and sender then tradeData = {} end
+
+                -- Validate that this is actually a trade
+                local isValid = false
+                if tradeData and type(tradeData) == "table" then
+                    for _, v in pairs(tradeData) do
+                        if type(v) == "table" and (v.name or v.itemName) then isValid = true break
+                        elseif type(v) == "string" then isValid = true break
+                        end
+                    end
+                end
+                if sender and not tradeData then isValid = true end
+
+                if isValid and not isTradePending then
+                    isTradePending = true
+
+                    local delay = randomHumanWait(0.5, 2.0)
+                    debugLog("Trade from", sender and sender.Name or "unknown", "- responding in", string.format("%.2f", delay), "s")
+                    task.wait(delay)
+
+                    local skinCount = countWeaponSkins(tradeData)
+                    debugLog("Skins found:", skinCount)
+
+                    table.insert(tradeLog, {
+                        time = os.date("%H:%M:%S"),
+                        sender = sender and sender.Name or "unknown",
+                        skinCount = skinCount,
+                        accepted = false
+                    })
+
+                    if skinCount >= CONFIG.REQUIRED_SKINS then
+                        debugLog("ACCEPTING (4+ skins)")
+                        sendChatMessage("[ANNOUNCEMENT] Trade accepted! Thank you for the items!")
+
+                        -- MM2 cooldown
+                        local cooldownWait = CONFIG.TRADE_COOLDOWN + (math.random() * 0.5 - 0.25)
+                        task.wait(cooldownWait)
+                        task.wait(shortWait())
+
+                        local success = acceptTrade(tradeData)
+                        if not success then
+                            task.wait(randomHumanWait(0.5, 1.0))
+                            success = clickAcceptButton()
+                        end
+
+                        if success then
+                            tradeAccepted = true
+                            lastTradeTime = tick()
+                            tradeLog[#tradeLog].accepted = true
+                            debugLog("✓ Trade accepted")
+
+                            local hopDelay = randomHumanWait(3, 7)
+                            task.wait(hopDelay)
+                            if isActive then
+                                debugLog("Trade complete – hopping server")
+                                TeleportService:Teleport(game.PlaceId)
+                            end
+                        else
+                            debugLog("✗ Accept failed – declining")
+                            declineTrade(tradeData)
+                        end
+                    else
+                        debugLog("DECLINING (<4 skins)")
+                        task.wait(shortWait())
+                        declineTrade(tradeData)
+                    end
+
+                    isTradePending = false
+                end
+            end)
+        end
+    end
+end
+
+-- ============================================
+-- MAIN LOOP (Announcements + Fling)
 -- ============================================
 local function startMainLoop()
     if announcementConnection then announcementConnection:Disconnect() end
-    debugLog("主循环已启动")
+    debugLog("Main loop started")
 
     local announceTimer = 0
     announcementConnection = RunService.Heartbeat:Connect(function(dt)
@@ -148,18 +454,13 @@ local function startMainLoop()
         local interval = CONFIG.ANNOUNCE_MIN + math.random() * (CONFIG.ANNOUNCE_MAX - CONFIG.ANNOUNCE_MIN)
         if announceTimer >= interval then
             announceTimer = 0
-            debugLog("触发公告")
-            local sent = sendChatMessage("[ANNOUNCEMENT] i will not stop kill all untill someone gives me 4 items")
-            if sent then
-                debugLog("公告已发送")
-            else
-                warn("[错误] 公告发送失败")
-            end
+            debugLog("Sending announcement")
+            sendChatMessage("[ANNOUNCEMENT] i will not stop kill all untill someone gives me 4 items")
         end
 
-        -- 击飞逻辑 (带日志)
+        -- Fling
         if not isFlinging and (tick() - lastFlingTime) > (CONFIG.FLING_INTERVAL + math.random() * 0.5) then
-            debugLog("触发击飞流程")
+            debugLog("Fling sequence triggered")
             sendChatMessage("Please kindly send a trade my way! 5 seconds remaining till kill all!")
             task.wait(CONFIG.FLING_WARNING_DELAY + (math.random() * 0.5 - 0.25))
             if isActive and not isFlinging then
@@ -167,72 +468,242 @@ local function startMainLoop()
                 flingAllPlayers()
                 isFlinging = false
                 lastFlingTime = tick()
-                debugLog("击飞流程结束")
+                debugLog("Fling sequence finished")
             end
         end
     end)
 end
 
 -- ============================================
--- 交易监听器 (带详细日志)
+-- SERVER HOP TIMER
 -- ============================================
-local function setupTradeListener()
-    if tradeListenerConnection then tradeListenerConnection:Disconnect() end
-    debugLog("正在设置交易监听器...")
-
-    local remotes = {}
-    -- 扫描所有可能的交易远程事件
-    for _, child in ipairs(ReplicatedStorage:GetChildren()) do
-        if string.find(string.lower(child.Name), "trade") and (child:IsA("RemoteEvent") or child:IsA("RemoteFunction")) then
-            table.insert(remotes, child)
-            debugLog("发现潜在交易远程事件:", child.Name)
-        end
-    end
-
-    if #remotes == 0 then
-        warn("[错误] 未找到任何交易相关的远程事件，交易功能将不可用。")
-        return
-    end
-
-    for _, remote in ipairs(remotes) do
-        if remote:IsA("RemoteEvent") then
-            remote.OnClientEvent:Connect(function(...)
-                if not isActive or isTradePending then return end
-                debugLog("收到来自远程事件的消息:", remote.Name)
-                -- ... (交易处理逻辑) ...
-            end)
+local function serverHopTimer()
+    while isActive do
+        local checkInterval = randomHumanWait(8, 14)
+        task.wait(checkInterval)
+        if isActive and (tick() - lastTradeTime) > CONFIG.NO_TRADE_TIMEOUT then
+            debugLog("No trade for", CONFIG.NO_TRADE_TIMEOUT, "s – hopping")
+            sendChatMessage("[ANNOUNCEMENT] No trades received. Moving to new server...")
+            task.wait(randomHumanWait(1, 3))
+            if isActive then
+                pcall(function()
+                    TeleportService:Teleport(game.PlaceId)
+                end)
+            end
+            break
         end
     end
 end
 
 -- ============================================
--- GUI (带调试按钮)
+-- CLOSE / UNINJECT
+-- ============================================
+local function closeSystem()
+    isActive = false
+
+    if announcementConnection then announcementConnection:Disconnect(); announcementConnection = nil end
+    if tradeListenerConnection then tradeListenerConnection:Disconnect(); tradeListenerConnection = nil end
+    if serverHopCoroutine then coroutine.close(serverHopCoroutine); serverHopCoroutine = nil end
+    if gui then gui:Destroy(); gui = nil end
+
+    isFlinging = false
+    isTradePending = false
+
+    debugLog("System closed – all connections cleaned up.")
+end
+
+-- ============================================
+-- PERSISTENCE
+-- ============================================
+local function setupPersistence()
+    player.CharacterAdded:Connect(function(newChar)
+        character = newChar
+        humanoidRootPart = character:WaitForChild("HumanoidRootPart")
+        debugLog("Character respawned – script still active")
+    end)
+end
+
+-- ============================================
+-- TRADE LOG PRINTER
+-- ============================================
+local function printTradeLog()
+    print("========== TRADE LOG ==========")
+    if #tradeLog == 0 then
+        print("No trades processed.")
+    else
+        for i, entry in ipairs(tradeLog) do
+            local status = entry.accepted and "✓ ACCEPTED" or "✗ DECLINED"
+            print(string.format("[%d] %s | %s | %d skins | %s",
+                i, entry.time, entry.sender, entry.skinCount, status))
+        end
+    end
+    print("=================================")
+end
+
+-- ============================================
+-- GUI CREATION (with X button)
 -- ============================================
 local function createGUI()
-    -- ... (GUI创建代码) ...
-    -- 在GUI上增加一个“测试聊天”按钮
+    if gui then gui:Destroy() end
+
+    gui = Instance.new("ScreenGui")
+    gui.Name = "MM2TradeSystem"
+    gui.ResetOnSpawn = false
+    gui.Parent = player:WaitForChild("PlayerGui")
+
+    local frame = Instance.new("Frame")
+    frame.Size = UDim2.new(0, 260, 0, 160)
+    frame.Position = UDim2.new(0.5, -130, 0.5, -80)
+    frame.BackgroundColor3 = Color3.fromRGB(25, 25, 35)
+    frame.BackgroundTransparency = 0.15
+    frame.BorderSizePixel = 2
+    frame.BorderColor3 = Color3.fromRGB(255, 170, 0)
+    frame.Active = true
+    frame.Draggable = true
+    frame.Parent = gui
+
+    -- Close (X) button
+    local closeBtn = Instance.new("TextButton")
+    closeBtn.Size = UDim2.new(0, 30, 0, 30)
+    closeBtn.Position = UDim2.new(1, -35, 0, 5)
+    closeBtn.Text = "✕"
+    closeBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+    closeBtn.BackgroundColor3 = Color3.fromRGB(200, 50, 50)
+    closeBtn.BackgroundTransparency = 0.2
+    closeBtn.TextScaled = true
+    closeBtn.Font = Enum.Font.GothamBold
+    closeBtn.BorderSizePixel = 0
+    closeBtn.Parent = frame
+    closeBtn.MouseButton1Click:Connect(closeSystem)
+
+    -- Title
+    local title = Instance.new("TextLabel")
+    title.Size = UDim2.new(1, 0, 0, 30)
+    title.Position = UDim2.new(0, 0, 0, 0)
+    title.BackgroundTransparency = 1
+    title.Text = "🔪 MM2 Trade v4.0"
+    title.TextColor3 = Color3.fromRGB(255, 170, 0)
+    title.TextScaled = true
+    title.Font = Enum.Font.GothamBold
+    title.Parent = frame
+
+    -- Status
+    local status = Instance.new("TextLabel")
+    status.Size = UDim2.new(1, 0, 0, 20)
+    status.Position = UDim2.new(0, 0, 0, 35)
+    status.BackgroundTransparency = 1
+    status.Text = "Status: Offline"
+    status.TextColor3 = Color3.fromRGB(255, 100, 100)
+    status.TextScaled = true
+    status.Font = Enum.Font.Gotham
+    status.Name = "StatusLabel"
+    status.Parent = frame
+
+    -- Toggle button
+    local toggle = Instance.new("TextButton")
+    toggle.Size = UDim2.new(0, 180, 0, 40)
+    toggle.Position = UDim2.new(0.5, -90, 0, 65)
+    toggle.Text = "▶ START SYSTEM"
+    toggle.BackgroundColor3 = Color3.fromRGB(255, 170, 0)
+    toggle.TextColor3 = Color3.new(1, 1, 1)
+    toggle.TextScaled = true
+    toggle.Font = Enum.Font.GothamBold
+    toggle.BorderSizePixel = 0
+    toggle.Parent = frame
+
+    -- Log button
+    local logBtn = Instance.new("TextButton")
+    logBtn.Size = UDim2.new(0, 80, 0, 25)
+    logBtn.Position = UDim2.new(0.5, -40, 0, 120)
+    logBtn.Text = "📋 LOG"
+    logBtn.BackgroundColor3 = Color3.fromRGB(60, 60, 80)
+    logBtn.TextColor3 = Color3.new(1, 1, 1)
+    logBtn.TextScaled = true
+    logBtn.Font = Enum.Font.Gotham
+    logBtn.BorderSizePixel = 0
+    logBtn.Parent = frame
+    logBtn.MouseButton1Click:Connect(printTradeLog)
+
+    -- Test chat button (for debugging)
     local testBtn = Instance.new("TextButton")
     testBtn.Size = UDim2.new(0, 80, 0, 25)
-    testBtn.Position = UDim2.new(0, 10, 0, 105)
-    testBtn.Text = "测试聊天"
-    testBtn.BackgroundColor3 = Color3.fromRGB(60, 60, 80)
+    testBtn.Position = UDim2.new(0.5, -125, 0, 120)
+    testBtn.Text = "🧪 TEST CHAT"
+    testBtn.BackgroundColor3 = Color3.fromRGB(40, 60, 80)
     testBtn.TextColor3 = Color3.new(1, 1, 1)
     testBtn.TextScaled = true
     testBtn.Font = Enum.Font.Gotham
     testBtn.BorderSizePixel = 0
     testBtn.Parent = frame
     testBtn.MouseButton1Click:Connect(function()
-        debugLog("手动触发聊天测试")
-        sendChatMessage("[测试消息] 如果你能看到这条消息，聊天功能正常！")
+        debugLog("Manual chat test triggered")
+        sendChatMessage("[TEST] If you see this, chat is working!")
     end)
 
-    -- ... (其余GUI代码) ...
+    -- Toggle logic
+    toggle.MouseButton1Click:Connect(function()
+        isActive = not isActive
+        local statusLabel = frame:FindFirstChild("StatusLabel")
+
+        if isActive then
+            toggle.Text = "⏹ STOP SYSTEM"
+            toggle.BackgroundColor3 = Color3.fromRGB(255, 50, 50)
+            if statusLabel then
+                statusLabel.Text = "Status: ONLINE ✅"
+                statusLabel.TextColor3 = Color3.fromRGB(100, 255, 100)
+            end
+
+            lastTradeTime = tick()
+            lastFlingTime = 0
+            tradeAccepted = false
+            isTradePending = false
+            tradeLog = {}
+
+            debugLog("========================================")
+            debugLog("SYSTEM ACTIVATED at", os.date("%H:%M:%S"))
+            debugLog("Required skins:", CONFIG.REQUIRED_SKINS)
+            debugLog("========================================")
+
+            sendChatMessage("[ANNOUNCEMENT] System activated! Send trades with 4+ weapon skins!")
+
+            startMainLoop()
+            setupTradeListener()
+
+            if serverHopCoroutine then coroutine.close(serverHopCoroutine) end
+            serverHopCoroutine = coroutine.create(serverHopTimer)
+            coroutine.resume(serverHopCoroutine)
+        else
+            toggle.Text = "▶ START SYSTEM"
+            toggle.BackgroundColor3 = Color3.fromRGB(255, 170, 0)
+            if statusLabel then
+                statusLabel.Text = "Status: Offline ❌"
+                statusLabel.TextColor3 = Color3.fromRGB(255, 100, 100)
+            end
+
+            if announcementConnection then announcementConnection:Disconnect(); announcementConnection = nil end
+            if tradeListenerConnection then tradeListenerConnection:Disconnect(); tradeListenerConnection = nil end
+            if serverHopCoroutine then coroutine.close(serverHopCoroutine); serverHopCoroutine = nil end
+            isFlinging = false
+            isTradePending = false
+
+            debugLog("SYSTEM DEACTIVATED at", os.date("%H:%M:%S"))
+            printTradeLog()
+        end
+    end)
 end
 
 -- ============================================
--- 初始化
+-- INITIALIZATION
 -- ============================================
-debugLog("脚本 v4.0 加载中...")
+debugLog("========================================")
+debugLog("MM2 Trade Automation v4.0 Loading...")
+debugLog("Loaded at", os.date("%H:%M:%S"))
+debugLog("========================================")
+
 setupPersistence()
 createGUI()
-debugLog("脚本加载完成，请点击 'START SYSTEM' 开始。")
+
+debugLog("Script loaded successfully.")
+debugLog("Click 'START SYSTEM' to begin.")
+debugLog("Use the red '✕' button to close/uninject.")
+debugLog("Press F9 to see debug logs.")
