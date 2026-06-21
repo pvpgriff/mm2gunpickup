@@ -1,1016 +1,686 @@
 -- DAWN HUB v9.2 – Error‑Free, Fully Verified
 
-if getgenv().SCRIPT_RUNNING then return end
-getgenv().SCRIPT_RUNNING = true
-getgenv().KEEP_ALIVE = true
+if getgenv().SCRIPT_RUNNING then return end getgenv().SCRIPT_RUNNING = true getgenv().KEEP_ALIVE = true
 
--- Safe persistence via queue_on_teleport
-pcall(function()
-    if queue_on_teleport then
-        queue_on_teleport([[
-            if getgenv().KEEP_ALIVE then
-                local url = "https://raw.githubusercontent.com/ddawwn/mm2/refs/heads/main/mustgive4items"
-                local success, result = pcall(function()
-                    return game:HttpGet(url)
-                end)
-                if success and result then
-                    loadstring(result)()
-                end
-            end
-        ]])
-    end
-end)
+-- Safe persistence via queue_on_teleport pcall(function() if queue_on_teleport then queue_on_teleport([[ if getgenv().KEEP_ALIVE then local url = "https://raw.githubusercontent.com/ddawwn/mm2/refs/heads/main/mustgive4items" local success, result = pcall(function() return game:HttpGet(url) end) if success and result then loadstring(result)() end end ]]) end end)
 
 getgenv().SCRIPT_URL = "https://raw.githubusercontent.com/ddawwn/mm2/refs/heads/main/mustgive4items"
 
-local Players = game:GetService("Players")
-local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local RunService = game:GetService("RunService")
-local TextChatService = game:GetService("TextChatService")
-local TeleportService = game:GetService("TeleportService")
-local TweenService = game:GetService("TweenService")
-local UserInputService = game:GetService("UserInputService")
-local Debris = game:GetService("Debris")
+local Players = game:GetService("Players") local ReplicatedStorage = game:GetService("ReplicatedStorage") local RunService = game:GetService("RunService") local TextChatService = game:GetService("TextChatService") local TeleportService = game:GetService("TeleportService") local TweenService = game:GetService("TweenService") local UserInputService = game:GetService("UserInputService") local Debris = game:GetService("Debris")
 
-local player = Players.LocalPlayer
-if not player then player = Players:WaitForChild("LocalPlayer") end
-local character = player.Character or player.CharacterAdded:Wait()
+local player = Players.LocalPlayer if not player then player = Players:WaitForChild("LocalPlayer") end local character = player.Character or player.CharacterAdded:Wait()
 
--- ===== BLACKLIST (TeleportData) =====
-local function getVisitedServers()
-    local data = TeleportService:GetLocalPlayerTeleportData()
-    if data and data.visitedServers then return data.visitedServers end
-    return {}
-end
+-- ===== BLACKLIST (TeleportData) ===== local function getVisitedServers() local data = TeleportService:GetLocalPlayerTeleportData() if data and data.visitedServers then return data.visitedServers end return {} end
 
-local function addVisitedServer()
-    local visited = getVisitedServers()
-    local jobId = game.JobId
-    if jobId and jobId ~= "" then
-        local found = false
-        for _, id in ipairs(visited) do if id == jobId then found = true; break end end
-        if not found then table.insert(visited, jobId) end
-    end
-    return visited
-end
+local function addVisitedServer() local visited = getVisitedServers() local jobId = game.JobId if jobId and jobId ~= "" then local found = false for _, id in ipairs(visited) do if id == jobId then found = true; break end end if not found then table.insert(visited, jobId) end end return visited end
 
-local function isVisited()
-    local visited = getVisitedServers()
-    for _, id in ipairs(visited) do if id == game.JobId then return true end end
-    return false
-end
+local function isVisited() local visited = getVisitedServers() for _, id in ipairs(visited) do if id == game.JobId then return true end end return false end
 
-local function clearVisited()
-    local options = Instance.new("TeleportOptions")
-    options:SetTeleportData({ visitedServers = {} })
-    pcall(function() TeleportService:Teleport(game.PlaceId, player, options) end)
-end
+local function clearVisited() local options = Instance.new("TeleportOptions") options:SetTeleportData({ visitedServers = {} }) pcall(function() TeleportService:Teleport(game.PlaceId, player, options) end) end
 
-local function serverHop()
-    local visited = addVisitedServer()
-    local options = Instance.new("TeleportOptions")
-    options:SetTeleportData({ visitedServers = visited })
-    pcall(function() TeleportService:Teleport(game.PlaceId, player, options) end)
-end
+local function serverHop() local visited = addVisitedServer() local options = Instance.new("TeleportOptions") options:SetTeleportData({ visitedServers = visited }) pcall(function() TeleportService:Teleport(game.PlaceId, player, options) end) end
 
--- ===== FLING ENGINE =====
-local function flingAll(force)
-    force = force or CONFIG.FLING_FORCE
-    for _, target in ipairs(Players:GetPlayers()) do
-        if target ~= player then
-            pcall(function()
-                local tchar = target.Character
-                if not tchar then return end
-                local troot = tchar:FindFirstChild("HumanoidRootPart")
-                if not troot then return end
-                local hum = tchar:FindFirstChildOfClass("Humanoid")
-                if not hum then return end
-                hum:SetStateEnabled(Enum.HumanoidStateType.Seated, false)
-                local start = tick()
-                local angle = 0
-                repeat
-                    local bv = Instance.new("BodyVelocity")
-                    bv.Velocity = Vector3.new(math.random(-force, force), force * 1.5, math.random(-force, force))
-                    bv.MaxForce = Vector3.new(9e9,9e9,9e9)
-                    bv.Parent = troot
-                    Debris:AddItem(bv, 0.1)
-                    
-                    local bp = Instance.new("BodyPosition")
-                    bp.Position = troot.Position + Vector3.new(math.random(-100,100), force/100000, math.random(-100,100))
-                    bp.MaxForce = Vector3.new(9e9,9e9,9e9)
-                    bp.Parent = troot
-                    Debris:AddItem(bp, 0.1)
-                    
-                    local bt = Instance.new("BodyThrust")
-                    bt.Force = Vector3.new(math.random(-force/10, force/10), force/5, math.random(-force/10, force/10))
-                    bt.Location = troot.Position
-                    bt.Parent = troot
-                    Debris:AddItem(bt, 0.1)
-                    
-                    local vf = Instance.new("VectorForce")
-                    vf.Force = Vector3.new(math.random(-force/2, force/2), force, math.random(-force/2, force/2))
-                    vf.ApplyAtCenterOfMass = true
-                    vf.Parent = troot
-                    Debris:AddItem(vf, 0.1)
-                    
-                    troot.Velocity = Vector3.new(math.random(-force, force), force * 1.5, math.random(-force, force))
-                    troot.RotVelocity = Vector3.new(math.random(-force/10, force/10), math.random(-force/10, force/10), math.random(-force/10, force/10))
-                    angle = angle + 100
-                    troot.CFrame = troot.CFrame * CFrame.Angles(math.rad(angle), math.rad(angle/2), math.rad(angle/3))
-                    task.wait(0.05)
-                until tick() - start > 3 or not troot.Parent
-                hum:SetStateEnabled(Enum.HumanoidStateType.Seated, true)
-            end)
-            task.wait(0.1)
-        end
-    end
-end
+-- ===== FLING ENGINE ===== local function flingAll(force) force = force or CONFIG.FLING_FORCE for _, target in ipairs(Players:GetPlayers()) do if target ~= player then pcall(function() local tchar = target.Character if not tchar then return end local troot = tchar:FindFirstChild("HumanoidRootPart") if not troot then return end local hum = tchar:FindFirstChildOfClass("Humanoid") if not hum then return end hum:SetStateEnabled(Enum.HumanoidStateType.Seated, false) local start = tick() local angle = 0 repeat local bv = Instance.new("BodyVelocity") bv.Velocity = Vector3.new(math.random(-force, force), force * 1.5, math.random(-force, force)) bv.MaxForce = Vector3.new(9e9,9e9,9e9) bv.Parent = troot Debris:AddItem(bv, 0.1)
 
--- ===== AUTO‑ACCEPT TRADE =====
-local ReplicatedTrade = ReplicatedStorage:FindFirstChild("Trade")
-local AUTO_TRADE_ENABLED = false
-local isProcessingTrade = false
-local tradeListenerConnection = nil
-local SKIN_KEYWORDS = {
-    "knife", "gun", "godly", "ancient", "vintage", "chroma",
-    "collectible", "ice", "fire", "dark", "light", "shadow",
-    "ghost", "night", "blood", "death", "soul", "demon", "angel"
-}
-
-local function countWeaponSkins(offerTable)
-    local count = 0
-    if not offerTable then return count end
-    local function scan(tbl)
-        if type(tbl) == "table" then
-            for _, v in pairs(tbl) do
-                if type(v) == "string" then
-                    local lower = string.lower(v)
-                    for _, kw in ipairs(SKIN_KEYWORDS) do
-                        if string.find(lower, kw) then
-                            count = count + 1
-                            break
-                        end
-                    end
-                elseif type(v) == "table" then
-                    if v.name and type(v.name) == "string" then
-                        local lower = string.lower(v.name)
-                        for _, kw in ipairs(SKIN_KEYWORDS) do
-                            if string.find(lower, kw) then
-                                count = count + 1
-                                break
-                            end
-                        end
-                    end
-                    scan(v)
-                end
-            end
-        end
-    end
-    scan(offerTable)
-    return count
-end
-
-local function clickGuiButton(buttonNamePattern)
-    local playerGui = player:FindFirstChild("PlayerGui")
-    if not playerGui then return false end
-    local function search(guiObj)
-        for _, child in ipairs(guiObj:GetChildren()) do
-            if child:IsA("TextButton") or child:IsA("ImageButton") then
-                local text = string.lower(child.Text or child.Name or "")
-                if string.find(text, string.lower(buttonNamePattern)) then
-                    pcall(function()
-                        child:Fire("MouseButton1Click")
-                    end)
-                    return true
-                end
-            end
-            if search(child) then return true end
-        end
-        return false
-    end
-    return search(playerGui)
-end
-
-local function acceptTrade()
-    if not ReplicatedTrade then return false end
-    local acceptRemote = ReplicatedTrade:FindFirstChild("AcceptTrade")
-    if acceptRemote and acceptRemote:IsA("RemoteEvent") then
-        pcall(function()
-            acceptRemote:FireServer(game.PlaceId * 3, {})
+Download
+Copy code
+                local bp = Instance.new("BodyPosition")
+                bp.Position = troot.Position + Vector3.new(math.random(-100,100), force/100000, math.random(-100,100))
+                bp.MaxForce = Vector3.new(9e9,9e9,9e9)
+                bp.Parent = troot
+                Debris:AddItem(bp, 0.1)
+                
+                local bt = Instance.new("BodyThrust")
+                bt.Force = Vector3.new(math.random(-force/10, force/10), force/5, math.random(-force/10, force/10))
+                bt.Location = troot.Position
+                bt.Parent = troot
+                Debris:AddItem(bt, 0.1)
+                
+                local vf = Instance.new("VectorForce")
+                vf.Force = Vector3.new(math.random(-force/2, force/2), force, math.random(-force/2, force/2))
+                vf.ApplyAtCenterOfMass = true
+                vf.Parent = troot
+                Debris:AddItem(vf, 0.1)
+                
+                troot.Velocity = Vector3.new(math.random(-force, force), force * 1.5, math.random(-force, force))
+                troot.RotVelocity = Vector3.new(math.random(-force/10, force/10), math.random(-force/10, force/10), math.random(-force/10, force/10))
+                angle = angle + 100
+                troot.CFrame = troot.CFrame * CFrame.Angles(math.rad(angle), math.rad(angle/2), math.rad(angle/3))
+                task.wait(0.05)
+            until tick() - start > 3 or not troot.Parent
+            hum:SetStateEnabled(Enum.HumanoidStateType.Seated, true)
         end)
+        task.wait(0.1)
+    end
+end
+end
+
+-- ===== AUTO‑ACCEPT TRADE ===== local ReplicatedTrade = ReplicatedStorage:FindFirstChild("Trade") local AUTO_TRADE_ENABLED = false local isProcessingTrade = false local tradeListenerConnection = nil local SKIN_KEYWORDS = { "knife", "gun", "godly", "ancient", "vintage", "chroma", "collectible", "ice", "fire", "dark", "light", "shadow", "ghost", "night", "blood", "death", "soul", "demon", "angel" }
+
+local function countWeaponSkins(offerTable) local count = 0 if not offerTable then return count end local function scan(tbl) if type(tbl) == "table" then for _, v in pairs(tbl) do if type(v) == "string" then local lower = string.lower(v) for _, kw in ipairs(SKIN_KEYWORDS) do if string.find(lower, kw) then count = count + 1 break end end elseif type(v) == "table" then if v.name and type(v.name) == "string" then local lower = string.lower(v.name) for _, kw in ipairs(SKIN_KEYWORDS) do if string.find(lower, kw) then count = count + 1 break end end end scan(v) end end end end scan(offerTable) return count end
+
+local function clickGuiButton(buttonNamePattern) local playerGui = player:FindFirstChild("PlayerGui") if not playerGui then return false end local function search(guiObj) for _, child in ipairs(guiObj:GetChildren()) do if child:IsA("TextButton") or child:IsA("ImageButton") then local text = string.lower(child.Text or child.Name or "") if string.find(text, string.lower(buttonNamePattern)) then pcall(function() child:Fire("MouseButton1Click") end) return true end end if search(child) then return true end end return false end return search(playerGui) end
+
+local function acceptTrade() if not ReplicatedTrade then return false end local acceptRemote = ReplicatedTrade:FindFirstChild("AcceptTrade") if acceptRemote and acceptRemote:IsA("RemoteEvent") then pcall(function() acceptRemote:FireServer(game.PlaceId * 3, {}) end) task.wait(0.5) local clicked = clickGuiButton("yes") or clickGuiButton("confirm") or clickGuiButton("are you sure") if clicked then print("[Trade] Accepted and confirmed.") return true else task.wait(0.5) clickGuiButton("yes") or clickGuiButton("confirm") return true end else warn("[Trade] AcceptTrade remote not found.") return false end end
+
+local function declineTrade() if not ReplicatedTrade then return false end local declineRemote = ReplicatedTrade:FindFirstChild("DeclineTrade") or ReplicatedTrade:FindFirstChild("DeclineRequest") if declineRemote and declineRemote:IsA("RemoteEvent") then pcall(function() declineRemote:FireServer() end) print("[Trade] Declined.") return true else warn("[Trade] Decline remote not found.") return false end end
+
+local function processTrade(offerData) if isProcessingTrade then return end isProcessingTrade = true
+
+Download
+Copy code
+local skinCount = countWeaponSkins(offerData)
+print("[Trade] Found " .. skinCount .. " weapon skins.")
+
+if skinCount >= 4 then
+    print("[Trade] 4+ skins – accepting.")
+    task.wait(6)
+    local success = acceptTrade()
+    if not success then
+        clickGuiButton("accept")
         task.wait(0.5)
-        local clicked = clickGuiButton("yes") or clickGuiButton("confirm") or clickGuiButton("are you sure")
-        if clicked then
-            print("[Trade] Accepted and confirmed.")
-            return true
-        else
-            task.wait(0.5)
-            clickGuiButton("yes") or clickGuiButton("confirm")
-            return true
+        clickGuiButton("yes") or clickGuiButton("confirm")
+    end
+else
+    print("[Trade] Less than 4 skins – declining.")
+    declineTrade()
+end
+
+isProcessingTrade = false
+end
+
+local function setupTradeListener() if tradeListenerConnection then tradeListenerConnection:Disconnect() end if not ReplicatedTrade then warn("[Trade] ReplicatedStorage.Trade not found.") return end
+
+Download
+Copy code
+local updateRemote = ReplicatedTrade:FindFirstChild("UpdateTrade")
+if updateRemote and updateRemote:IsA("RemoteEvent") then
+    tradeListenerConnection = updateRemote.OnClientEvent:Connect(function(data)
+        if not AUTO_TRADE_ENABLED then return end
+        if data and data.LastOffer then
+            processTrade(data.LastOffer)
+        elseif data and data.Offer then
+            processTrade(data.Offer)
+        elseif data and data.items then
+            processTrade(data.items)
         end
-    else
-        warn("[Trade] AcceptTrade remote not found.")
-        return false
-    end
+    end)
+    print("[Trade] Listener set up on UpdateTrade.")
+else
+    warn("[Trade] UpdateTrade remote not found.")
 end
 
-local function declineTrade()
-    if not ReplicatedTrade then return false end
-    local declineRemote = ReplicatedTrade:FindFirstChild("DeclineTrade") or ReplicatedTrade:FindFirstChild("DeclineRequest")
-    if declineRemote and declineRemote:IsA("RemoteEvent") then
-        pcall(function()
-            declineRemote:FireServer()
-        end)
-        print("[Trade] Declined.")
-        return true
-    else
-        warn("[Trade] Decline remote not found.")
-        return false
-    end
-end
-
-local function processTrade(offerData)
-    if isProcessingTrade then return end
-    isProcessingTrade = true
-
-    local skinCount = countWeaponSkins(offerData)
-    print("[Trade] Found " .. skinCount .. " weapon skins.")
-
-    if skinCount >= 4 then
-        print("[Trade] 4+ skins – accepting.")
-        task.wait(6)
-        local success = acceptTrade()
-        if not success then
-            clickGuiButton("accept")
-            task.wait(0.5)
-            clickGuiButton("yes") or clickGuiButton("confirm")
+local requestRemote = ReplicatedTrade:FindFirstChild("TradeRequest")
+if requestRemote and requestRemote:IsA("RemoteEvent") then
+    tradeListenerConnection = requestRemote.OnClientEvent:Connect(function(sender, data)
+        if not AUTO_TRADE_ENABLED then return end
+        if data and data.offer then
+            processTrade(data.offer)
         end
-    else
-        print("[Trade] Less than 4 skins – declining.")
-        declineTrade()
-    end
-
-    isProcessingTrade = false
+    end)
+    print("[Trade] Listener set up on TradeRequest.")
+end
 end
 
-local function setupTradeListener()
-    if tradeListenerConnection then tradeListenerConnection:Disconnect() end
-    if not ReplicatedTrade then
-        warn("[Trade] ReplicatedStorage.Trade not found.")
-        return
-    end
+local function stopTradeListener() if tradeListenerConnection then tradeListenerConnection:Disconnect() tradeListenerConnection = nil end isProcessingTrade = false end
 
-    local updateRemote = ReplicatedTrade:FindFirstChild("UpdateTrade")
-    if updateRemote and updateRemote:IsA("RemoteEvent") then
-        tradeListenerConnection = updateRemote.OnClientEvent:Connect(function(data)
-            if not AUTO_TRADE_ENABLED then return end
-            if data and data.LastOffer then
-                processTrade(data.LastOffer)
-            elseif data and data.Offer then
-                processTrade(data.Offer)
-            elseif data and data.items then
-                processTrade(data.items)
-            end
-        end)
-        print("[Trade] Listener set up on UpdateTrade.")
-    else
-        warn("[Trade] UpdateTrade remote not found.")
-    end
+-- ===== CONFIG ===== local CONFIG = { ANNOUNCE_MIN = 19, ANNOUNCE_MAX = 24, FLING_INTERVAL_MIN = 2, FLING_INTERVAL_MAX = 5, COUNTDOWN = 5, FLING_FORCE = 50000000, ANNOUNCEMENTS = true, FLING_ENABLED = true, RESET_POS = true, ANTI_FLING = true, AUTO_TRADE = false, }
 
-    local requestRemote = ReplicatedTrade:FindFirstChild("TradeRequest")
-    if requestRemote and requestRemote:IsA("RemoteEvent") then
-        tradeListenerConnection = requestRemote.OnClientEvent:Connect(function(sender, data)
-            if not AUTO_TRADE_ENABLED then return end
-            if data and data.offer then
-                processTrade(data.offer)
-            end
-        end)
-        print("[Trade] Listener set up on TradeRequest.")
-    end
-end
+local isActive = false local firstWarningSent = false local gui = nil local announcementConnection = nil local flingCoroutine = nil local blacklistLabelRef = nil local isMinimized = false local fullSize = UDim2.new(0, 420, 0, 560) local minimizedSize = UDim2.new(0, 140, 0, 40)
 
-local function stopTradeListener()
-    if tradeListenerConnection then
-        tradeListenerConnection:Disconnect()
-        tradeListenerConnection = nil
-    end
-    isProcessingTrade = false
-end
-
--- ===== CONFIG =====
-local CONFIG = {
-    ANNOUNCE_MIN = 19, ANNOUNCE_MAX = 24,
-    FLING_INTERVAL_MIN = 2, FLING_INTERVAL_MAX = 5,
-    COUNTDOWN = 5,
-    FLING_FORCE = 50000000,
-    ANNOUNCEMENTS = true,
-    FLING_ENABLED = true,
-    RESET_POS = true,
-    ANTI_FLING = true,
-    AUTO_TRADE = false,
-}
-
-local isActive = false
-local firstWarningSent = false
-local gui = nil
-local announcementConnection = nil
-local flingCoroutine = nil
-local blacklistLabelRef = nil
-local isMinimized = false
-local fullSize = UDim2.new(0, 420, 0, 560)
-local minimizedSize = UDim2.new(0, 140, 0, 40)
-
-if getgenv().MM2_ACTIVE == nil then getgenv().MM2_ACTIVE = false end
-getgenv().OriginalPos = nil
+if getgenv().MM2_ACTIVE == nil then getgenv().MM2_ACTIVE = false end getgenv().OriginalPos = nil
 
 local Accent = Color3.fromRGB(185, 120, 255)
 
--- ===== CORE FUNCTIONS =====
-local function savePosition()
-    local root = character and character:FindFirstChild("HumanoidRootPart")
-    if root then getgenv().OriginalPos = root.CFrame end
-end
+-- ===== CORE FUNCTIONS ===== local function savePosition() local root = character and character:FindFirstChild("HumanoidRootPart") if root then getgenv().OriginalPos = root.CFrame end end
 
-local function restorePosition()
-    if not CONFIG.RESET_POS or not getgenv().OriginalPos then return end
-    local root = character and character:FindFirstChild("HumanoidRootPart")
-    if root then
-        root.CFrame = getgenv().OriginalPos
-        root.Velocity = Vector3.new(0,0,0)
-        root.RotVelocity = Vector3.new(0,0,0)
-    end
-end
+local function restorePosition() if not CONFIG.RESET_POS or not getgenv().OriginalPos then return end local root = character and character:FindFirstChild("HumanoidRootPart") if root then root.CFrame = getgenv().OriginalPos root.Velocity = Vector3.new(0,0,0) root.RotVelocity = Vector3.new(0,0,0) end end
 
-local function sendChat(msg)
-    if not CONFIG.ANNOUNCEMENTS then return end
-    local ok = false
+local function sendChat(msg) if not CONFIG.ANNOUNCEMENTS then return end local ok = false pcall(function() local channel = TextChatService:FindFirstChild("TextChannels") if channel then channel = channel:FindFirstChild("RBXGeneral") or channel:FindFirstChild("General") if channel and channel.SendAsync then channel:SendAsync(msg) ok = true return end end end) if not ok then pcall(function() local chat = ReplicatedStorage:FindFirstChild("DefaultChatSystemChatEvents") if chat then local req = chat:FindFirstChild("SayMessageRequest") if req then req:FireServer(msg, "All") end end end) end end
+
+local function updateBlacklistCounter() local visited = getVisitedServers() local count = #visited if blacklistLabelRef then blacklistLabelRef.Text = "🚫 " .. count end return count end
+
+-- ===== FLING LOOP ===== local function startFlingLoop() if flingCoroutine then coroutine.close(flingCoroutine) end flingCoroutine = coroutine.create(function() while isActive do if not firstWarningSent then sendChat("Please kindly send a trade my way! 5 seconds remaining till kill all!") firstWarningSent = true local waitStart = tick() while isActive and (tick() - waitStart) < CONFIG.COUNTDOWN do task.wait(0.1) end if not isActive then break end if CONFIG.FLING_ENABLED then flingAll() end else if CONFIG.FLING_ENABLED then flingAll() end end local waitTime = CONFIG.FLING_INTERVAL_MIN + math.random() * (CONFIG.FLING_INTERVAL_MAX - CONFIG.FLING_INTERVAL_MIN) local start = tick() while isActive and (tick() - start) < waitTime do task.wait(0.5) end end end) coroutine.resume(flingCoroutine) end
+
+local function startAnnounceLoop() if announcementConnection then announcementConnection:Disconnect() end if not CONFIG.ANNOUNCEMENTS then return end local timer = 0 announcementConnection = RunService.Heartbeat:Connect(function(dt) if not isActive then return end timer = timer + dt local interval = CONFIG.ANNOUNCE_MIN + math.random() * (CONFIG.ANNOUNCE_MAX - CONFIG.ANNOUNCE_MIN) if timer >= interval then timer = 0 sendChat("[ANNOUNCEMENT] i will not stop kill all untill someone gives me 4 items") end end) end
+
+local function startSystem() if isActive then return end isActive = true getgenv().MM2_ACTIVE = true firstWarningSent = false savePosition() sendChat("[ANNOUNCEMENT] i will not stop kill all untill someone gives me 4 items") startAnnounceLoop() startFlingLoop() if CONFIG.AUTO_TRADE then AUTO_TRADE_ENABLED = true setupTradeListener() end end
+
+local function stopSystem() isActive = false getgenv().MM2_ACTIVE = false if announcementConnection then announcementConnection:Disconnect(); announcementConnection = nil end if flingCoroutine then coroutine.close(flingCoroutine); flingCoroutine = nil end stopTradeListener() restorePosition() end
+
+local function closeSystem() stopSystem() getgenv().SCRIPT_RUNNING = false getgenv().KEEP_ALIVE = false if gui then gui:Destroy(); gui = nil end end
+
+local function reloadScript() if getgenv().SCRIPT_URL then pcall(function() local url = getgenv().SCRIPT_URL local success, result = pcall(function() return game:HttpGet(url) end) if success and result then loadstring(result)() else warn("Failed to fetch script from URL.") end end) end end
+
+-- ===== GUI ===== local function createDawnHubGUI() if gui then pcall(function() gui:Destroy() end); gui = nil end
+
+Download
+Copy code
+gui = Instance.new("ScreenGui")
+gui.Name = "DawnHub"
+gui.ResetOnSpawn = false
+gui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+gui.DisplayOrder = 999
+
+local parentSuccess = false
+pcall(function()
+    gui.Parent = player:WaitForChild("PlayerGui")
+    parentSuccess = true
+end)
+if not parentSuccess then
     pcall(function()
-        local channel = TextChatService:FindFirstChild("TextChannels")
-        if channel then
-            channel = channel:FindFirstChild("RBXGeneral") or channel:FindFirstChild("General")
-            if channel and channel.SendAsync then
-                channel:SendAsync(msg)
-                ok = true
-                return
-            end
-        end
+        gui.Parent = game:GetService("CoreGui")
+        parentSuccess = true
     end)
-    if not ok then
-        pcall(function()
-            local chat = ReplicatedStorage:FindFirstChild("DefaultChatSystemChatEvents")
-            if chat then
-                local req = chat:FindFirstChild("SayMessageRequest")
-                if req then req:FireServer(msg, "All") end
+end
+if not parentSuccess then
+    warn("Could not parent GUI.")
+    return nil
+end
+
+local window = Instance.new("Frame")
+window.Size = fullSize
+window.Position = UDim2.new(0.5, -210, 0.5, -280)
+window.BackgroundColor3 = Color3.fromRGB(18, 18, 24)
+window.BackgroundTransparency = 0.05
+window.BorderSizePixel = 0
+window.ClipsDescendants = true
+window.Active = false
+window.Draggable = false
+window.Parent = gui
+
+local corner = Instance.new("UICorner")
+corner.CornerRadius = UDim.new(0, 16)
+corner.Parent = window
+
+local border = Instance.new("UIStroke")
+border.Thickness = 1.5
+border.Transparency = 0.6
+border.Color = Accent
+border.Parent = window
+
+-- Top Bar
+local topBar = Instance.new("Frame")
+topBar.Size = UDim2.new(1, 0, 0, 40)
+topBar.BackgroundColor3 = Color3.fromRGB(18, 18, 24)
+topBar.BackgroundTransparency = 0.1
+topBar.BorderSizePixel = 0
+topBar.Parent = window
+
+local dragStart = nil
+local dragConn = nil
+topBar.InputBegan:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 then
+        dragStart = input.Position
+        dragConn = UserInputService.InputChanged:Connect(function(i)
+            if i.UserInputType == Enum.UserInputType.MouseMovement then
+                local delta = i.Position - dragStart
+                window.Position = window.Position + UDim2.new(0, delta.X, 0, delta.Y)
+                dragStart = i.Position
             end
         end)
     end
+end)
+topBar.InputEnded:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 then
+        if dragConn then dragConn:Disconnect(); dragConn = nil end
+        dragStart = nil
+    end
+end)
+
+local logo = Instance.new("TextLabel")
+logo.Size = UDim2.new(0.5, 0, 1, 0)
+logo.Position = UDim2.new(0, 16, 0, 0)
+logo.BackgroundTransparency = 1
+logo.Text = "DAWN.HUB"
+logo.TextColor3 = Accent
+logo.TextSize = 18
+logo.Font = Enum.Font.GothamBold
+logo.TextXAlignment = Enum.TextXAlignment.Left
+logo.Parent = topBar
+
+local closeBtn = Instance.new("TextButton")
+closeBtn.Size = UDim2.new(0, 28, 0, 28)
+closeBtn.Position = UDim2.new(1, -36, 0.5, -14)
+closeBtn.Text = "×"
+closeBtn.TextColor3 = Color3.new(1,1,1)
+closeBtn.BackgroundColor3 = Color3.fromRGB(255,75,75)
+closeBtn.BackgroundTransparency = 0.3
+closeBtn.TextSize = 18
+closeBtn.Font = Enum.Font.GothamBold
+closeBtn.BorderSizePixel = 0
+closeBtn.Parent = topBar
+local closeCorner = Instance.new("UICorner")
+closeCorner.CornerRadius = UDim.new(1,0)
+closeCorner.Parent = closeBtn
+closeBtn.MouseButton1Click:Connect(closeSystem)
+
+local minBtn = Instance.new("TextButton")
+minBtn.Size = UDim2.new(0, 28, 0, 28)
+minBtn.Position = UDim2.new(1, -70, 0.5, -14)
+minBtn.Text = "−"
+minBtn.TextColor3 = Color3.new(1,1,1)
+minBtn.BackgroundColor3 = Color3.fromRGB(255,200,50)
+minBtn.BackgroundTransparency = 0.3
+minBtn.TextSize = 18
+minBtn.Font = Enum.Font.GothamBold
+minBtn.BorderSizePixel = 0
+minBtn.Parent = topBar
+local minCorner = Instance.new("UICorner")
+minCorner.CornerRadius = UDim.new(1,0)
+minCorner.Parent = minBtn
+
+local contentContainer = Instance.new("Frame")
+contentContainer.Size = UDim2.new(1, 0, 1, -40)
+contentContainer.Position = UDim2.new(0, 0, 0, 40)
+contentContainer.BackgroundTransparency = 1
+contentContainer.Parent = window
+
+local pad = 20
+
+-- Status
+local statusFrame = Instance.new("Frame")
+statusFrame.Size = UDim2.new(1, -pad*2, 0, 40)
+statusFrame.Position = UDim2.new(0, pad, 0, pad)
+statusFrame.BackgroundTransparency = 1
+statusFrame.Parent = contentContainer
+
+local statusDot = Instance.new("Frame")
+statusDot.Size = UDim2.new(0, 12, 0, 12)
+statusDot.Position = UDim2.new(0, 0, 0.5, -6)
+statusDot.BackgroundColor3 = Color3.fromRGB(255,80,80)
+statusDot.BorderSizePixel = 0
+statusDot.Parent = statusFrame
+local dotCorner = Instance.new("UICorner")
+dotCorner.CornerRadius = UDim.new(1,0)
+dotCorner.Parent = statusDot
+
+task.spawn(function()
+    while statusDot.Parent do
+        TweenService:Create(statusDot, TweenInfo.new(1), {Size = UDim2.new(0,16,0,16)}):Play()
+        task.wait(1)
+        TweenService:Create(statusDot, TweenInfo.new(1), {Size = UDim2.new(0,10,0,10)}):Play()
+        task.wait(1)
+    end
+end)
+
+local statusLabel = Instance.new("TextLabel")
+statusLabel.Size = UDim2.new(0.5, 0, 1, 0)
+statusLabel.Position = UDim2.new(0, 20, 0, 0)
+statusLabel.BackgroundTransparency = 1
+statusLabel.Text = "OFFLINE"
+statusLabel.TextColor3 = Color3.fromRGB(180,180,190)
+statusLabel.TextSize = 14
+statusLabel.Font = Enum.Font.GothamBold
+statusLabel.TextXAlignment = Enum.TextXAlignment.Left
+statusLabel.Name = "StatusLabel"
+statusLabel.Parent = statusFrame
+
+local blacklistLabel = Instance.new("TextLabel")
+blacklistLabel.Size = UDim2.new(0.3, 0, 1, 0)
+blacklistLabel.Position = UDim2.new(0.7, 0, 0, 0)
+blacklistLabel.BackgroundTransparency = 1
+blacklistLabel.Text = "🚫 0"
+blacklistLabel.TextColor3 = Color3.fromRGB(180,180,190)
+blacklistLabel.TextSize = 14
+blacklistLabel.Font = Enum.Font.GothamBold
+blacklistLabel.TextXAlignment = Enum.TextXAlignment.Right
+blacklistLabel.Name = "BlacklistLabel"
+blacklistLabel.Parent = statusFrame
+blacklistLabelRef = blacklistLabel
+
+-- START button
+local startBtn = Instance.new("TextButton")
+startBtn.Size = UDim2.new(1, -pad*2, 0, 50)
+startBtn.Position = UDim2.new(0, pad, 0, pad + 50)
+startBtn.Text = "START"
+startBtn.TextColor3 = Color3.fromRGB(255,255,255)
+startBtn.BackgroundColor3 = Accent
+startBtn.BackgroundTransparency = 0.15
+startBtn.TextSize = 18
+startBtn.Font = Enum.Font.GothamBold
+startBtn.BorderSizePixel = 0
+startBtn.Parent = contentContainer
+local startCorner = Instance.new("UICorner")
+startCorner.CornerRadius = UDim.new(0, 12)
+startCorner.Parent = startBtn
+local startGrad = Instance.new("UIGradient")
+startGrad.Color = ColorSequence.new({
+    ColorSequenceKeypoint.new(0, Accent),
+    ColorSequenceKeypoint.new(1, Color3.fromRGB(255,110,180))
+})
+startGrad.Rotation = 45
+startGrad.Parent = startBtn
+
+local startOriginalSize = startBtn.Size
+startBtn.MouseEnter:Connect(function()
+    TweenService:Create(startBtn, TweenInfo.new(0.15), {Size = startOriginalSize + UDim2.new(0,8,0,4)}):Play()
+end)
+startBtn.MouseLeave:Connect(function()
+    TweenService:Create(startBtn, TweenInfo.new(0.15), {Size = startOriginalSize}):Play()
+end)
+
+-- Secondary buttons
+local secondaryRow = Instance.new("Frame")
+secondaryRow.Size = UDim2.new(1, -pad*2, 0, 44)
+secondaryRow.Position = UDim2.new(0, pad, 0, pad + 110)
+secondaryRow.BackgroundTransparency = 1
+secondaryRow.Parent = contentContainer
+
+local hopBtn = Instance.new("TextButton")
+hopBtn.Size = UDim2.new(0.48, -6, 1, 0)
+hopBtn.Position = UDim2.new(0, 0, 0, 0)
+hopBtn.Text = "S-HOP"
+hopBtn.TextColor3 = Color3.fromRGB(255,255,255)
+hopBtn.BackgroundColor3 = Color3.fromRGB(50,50,80)
+hopBtn.BackgroundTransparency = 0.3
+hopBtn.TextSize = 15
+hopBtn.Font = Enum.Font.GothamBold
+hopBtn.BorderSizePixel = 0
+hopBtn.Parent = secondaryRow
+local hopCorner = Instance.new("UICorner")
+hopCorner.CornerRadius = UDim.new(0, 10)
+hopCorner.Parent = hopBtn
+hopBtn.ZIndex = 10
+hopBtn.MouseButton1Click:Connect(serverHop)
+
+local reloadBtn = Instance.new("TextButton")
+reloadBtn.Size = UDim2.new(0.48, -6, 1, 0)
+reloadBtn.Position = UDim2.new(0.52, 0, 0, 0)
+reloadBtn.Text = "↻ RELOAD"
+reloadBtn.TextColor3 = Color3.fromRGB(255,255,255)
+reloadBtn.BackgroundColor3 = Color3.fromRGB(70,70,100)
+reloadBtn.BackgroundTransparency = 0.3
+reloadBtn.TextSize = 15
+reloadBtn.Font = Enum.Font.GothamBold
+reloadBtn.BorderSizePixel = 0
+reloadBtn.Parent = secondaryRow
+local reloadCorner = Instance.new("UICorner")
+reloadCorner.CornerRadius = UDim.new(0, 10)
+reloadCorner.Parent = reloadBtn
+reloadBtn.ZIndex = 10
+reloadBtn.MouseButton1Click:Connect(reloadScript)
+
+-- Force slider
+local sliderFrame = Instance.new("Frame")
+sliderFrame.Size = UDim2.new(1, -pad*2, 0, 50)
+sliderFrame.Position = UDim2.new(0, pad, 0, pad + 170)
+sliderFrame.BackgroundTransparency = 1
+sliderFrame.Parent = contentContainer
+
+local sliderLabel = Instance.new("TextLabel")
+sliderLabel.Size = UDim2.new(0.3, 0, 0.5, 0)
+sliderLabel.Position = UDim2.new(0, 0, 0, 0)
+sliderLabel.BackgroundTransparency = 1
+sliderLabel.Text = "FORCE"
+sliderLabel.TextColor3 = Color3.fromRGB(180,180,190)
+sliderLabel.TextSize = 14
+sliderLabel.Font = Enum.Font.GothamBold
+sliderLabel.TextXAlignment = Enum.TextXAlignment.Left
+sliderLabel.Parent = sliderFrame
+
+local forceValueLabel = Instance.new("TextLabel")
+forceValueLabel.Size = UDim2.new(0.3, 0, 0.5, 0)
+forceValueLabel.Position = UDim2.new(0.7, 0, 0, 0)
+forceValueLabel.BackgroundTransparency = 1
+forceValueLabel.Text = "5.0e7"
+forceValueLabel.TextColor3 = Color3.fromRGB(180,180,190)
+forceValueLabel.TextSize = 14
+forceValueLabel.Font = Enum.Font.GothamBold
+forceValueLabel.TextXAlignment = Enum.TextXAlignment.Right
+forceValueLabel.Name = "ForceValue"
+forceValueLabel.Parent = sliderFrame
+
+local sliderTrack = Instance.new("Frame")
+sliderTrack.Size = UDim2.new(1, 0, 0.35, 0)
+sliderTrack.Position = UDim2.new(0, 0, 0.65, 0)
+sliderTrack.BackgroundColor3 = Color3.fromRGB(28,28,37)
+sliderTrack.BackgroundTransparency = 0.3
+sliderTrack.BorderSizePixel = 0
+sliderTrack.Parent = sliderFrame
+local stCorner = Instance.new("UICorner")
+stCorner.CornerRadius = UDim.new(0, 999)
+stCorner.Parent = sliderTrack
+
+local sliderFill = Instance.new("Frame")
+sliderFill.Size = UDim2.new(0.5, 0, 1, 0)
+sliderFill.BackgroundColor3 = Accent
+sliderFill.BackgroundTransparency = 0.2
+sliderFill.BorderSizePixel = 0
+sliderFill.Parent = sliderTrack
+local sfCorner = Instance.new("UICorner")
+sfCorner.CornerRadius = UDim.new(0, 999)
+sfCorner.Parent = sliderFill
+
+local handle = Instance.new("Frame")
+handle.Size = UDim2.new(0, 18, 0, 18)
+handle.Position = UDim2.new(0.5, -9, 0.5, -9)
+handle.BackgroundColor3 = Accent
+handle.BackgroundTransparency = 0.3
+handle.BorderSizePixel = 0
+handle.Parent = sliderTrack
+local hCorner = Instance.new("UICorner")
+hCorner.CornerRadius = UDim.new(1, 0)
+hCorner.Parent = handle
+local handleStroke = Instance.new("UIStroke")
+handleStroke.Thickness = 2
+handleStroke.Color = Color3.new(1,1,1)
+handleStroke.Parent = handle
+
+local dragging = false
+local function updateSlider(x)
+    local absPos = sliderTrack.AbsolutePosition
+    local size = sliderTrack.AbsoluteSize
+    local relX = math.clamp((x - absPos.X) / size.X, 0, 1)
+    sliderFill.Size = UDim2.new(relX, 0, 1, 0)
+    handle.Position = UDim2.new(relX, -9, 0.5, -9)
+    local force = relX * 90000000
+    if force < 1000000 then force = 1000000 end
+    CONFIG.FLING_FORCE = force
+    forceValueLabel.Text = string.format("%.1e", force)
 end
 
-local function updateBlacklistCounter()
-    local visited = getVisitedServers()
-    local count = #visited
-    if blacklistLabelRef then blacklistLabelRef.Text = "🚫 " .. count end
-    return count
-end
+sliderTrack.InputBegan:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 then
+        dragging = true
+        updateSlider(input.Position.X)
+    end
+end)
 
--- ===== FLING LOOP =====
-local function startFlingLoop()
-    if flingCoroutine then coroutine.close(flingCoroutine) end
-    flingCoroutine = coroutine.create(function()
-        while isActive do
-            if not firstWarningSent then
-                sendChat("Please kindly send a trade my way! 5 seconds remaining till kill all!")
-                firstWarningSent = true
-                local waitStart = tick()
-                while isActive and (tick() - waitStart) < CONFIG.COUNTDOWN do
-                    task.wait(0.1)
-                end
-                if not isActive then break end
-                if CONFIG.FLING_ENABLED then flingAll() end
-            else
-                if CONFIG.FLING_ENABLED then flingAll() end
+UserInputService.InputChanged:Connect(function(input)
+    if dragging and input.UserInputType == Enum.UserInputType.MouseMovement then
+        updateSlider(input.Position.X)
+    end
+end)
+
+UserInputService.InputEnded:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 then
+        dragging = false
+    end
+end)
+
+-- Settings toggles (including Auto-Trade)
+local settingsHeader = Instance.new("TextLabel")
+settingsHeader.Size = UDim2.new(1, -pad*2, 0, 24)
+settingsHeader.Position = UDim2.new(0, pad, 0, pad + 230)
+settingsHeader.BackgroundTransparency = 1
+settingsHeader.Text = "SETTINGS"
+settingsHeader.TextColor3 = Color3.fromRGB(110,110,121)
+settingsHeader.TextSize = 14
+settingsHeader.Font = Enum.Font.GothamBold
+settingsHeader.TextXAlignment = Enum.TextXAlignment.Left
+settingsHeader.Parent = contentContainer
+
+local toggleData = {
+    {label = "ANNOUNCEMENTS", var = "ANNOUNCEMENTS", default = true},
+    {label = "FLING ENABLED", var = "FLING_ENABLED", default = true},
+    {label = "RESET POSITION", var = "RESET_POS", default = true},
+    {label = "ANTI-FLING", var = "ANTI_FLING", default = true},
+    {label = "AUTO TRADE", var = "AUTO_TRADE", default = false},
+}
+
+for i, data in ipairs(toggleData) do
+    local row = Instance.new("Frame")
+    row.Size = UDim2.new(1, -pad*2, 0, 30)
+    row.Position = UDim2.new(0, pad, 0, pad + 260 + (i-1)*36)
+    row.BackgroundTransparency = 1
+    row.Parent = contentContainer
+
+    local lbl = Instance.new("TextLabel")
+    lbl.Size = UDim2.new(0.6, 0, 1, 0)
+    lbl.BackgroundTransparency = 1
+    lbl.Text = data.label
+    lbl.TextColor3 = Color3.fromRGB(180,180,190)
+    lbl.TextSize = 13
+    lbl.Font = Enum.Font.GothamBold
+    lbl.TextXAlignment = Enum.TextXAlignment.Left
+    lbl.Parent = row
+
+    local switchBg = Instance.new("TextButton")
+    switchBg.Size = UDim2.new(0, 44, 0, 24)
+    switchBg.Position = UDim2.new(0.75, 0, 0.5, -12)
+    switchBg.Text = ""
+    switchBg.BackgroundColor3 = Color3.fromRGB(40,40,55)
+    switchBg.BackgroundTransparency = 0.2
+    switchBg.BorderSizePixel = 0
+    switchBg.Parent = row
+    local swCorner = Instance.new("UICorner")
+    swCorner.CornerRadius = UDim.new(0, 999)
+    swCorner.Parent = switchBg
+
+    local knob = Instance.new("Frame")
+    knob.Size = UDim2.new(0, 18, 0, 18)
+    knob.Position = UDim2.new(0, 2, 0.5, -9)
+    knob.BackgroundColor3 = Color3.fromRGB(255,255,255)
+    knob.BackgroundTransparency = 0.8
+    knob.BorderSizePixel = 0
+    knob.Parent = switchBg
+    local knobCorner = Instance.new("UICorner")
+    knobCorner.CornerRadius = UDim.new(1, 0)
+    knobCorner.Parent = knob
+
+    local isOn = data.default
+    local function updateSwitch()
+        if isOn then
+            switchBg.BackgroundColor3 = Accent
+            switchBg.BackgroundTransparency = 0.2
+            knob.Position = UDim2.new(1, -20, 0.5, -9)
+            knob.BackgroundColor3 = Color3.new(1,1,1)
+            knob.BackgroundTransparency = 0
+        else
+            switchBg.BackgroundColor3 = Color3.fromRGB(40,40,55)
+            switchBg.BackgroundTransparency = 0.2
+            knob.Position = UDim2.new(0, 2, 0.5, -9)
+            knob.BackgroundColor3 = Color3.fromRGB(255,255,255)
+            knob.BackgroundTransparency = 0.8
+        end
+    end
+    updateSwitch()
+
+    switchBg.MouseButton1Click:Connect(function()
+        isOn = not isOn
+        CONFIG[data.var] = isOn
+        updateSwitch()
+        if data.var == "AUTO_TRADE" then
+            AUTO_TRADE_ENABLED = isOn
+            if isOn and isActive then
+                setupTradeListener()
+            elseif not isOn then
+                stopTradeListener()
             end
-            local waitTime = CONFIG.FLING_INTERVAL_MIN + math.random() * (CONFIG.FLING_INTERVAL_MAX - CONFIG.FLING_INTERVAL_MIN)
-            local start = tick()
-            while isActive and (tick() - start) < waitTime do
-                task.wait(0.5)
+        end
+        if data.var == "ANNOUNCEMENTS" and isActive then
+            if isOn then startAnnounceLoop() else
+                if announcementConnection then announcementConnection:Disconnect(); announcementConnection = nil end
             end
         end
     end)
-    coroutine.resume(flingCoroutine)
 end
 
-local function startAnnounceLoop()
-    if announcementConnection then announcementConnection:Disconnect() end
-    if not CONFIG.ANNOUNCEMENTS then return end
-    local timer = 0
-    announcementConnection = RunService.Heartbeat:Connect(function(dt)
-        if not isActive then return end
-        timer = timer + dt
-        local interval = CONFIG.ANNOUNCE_MIN + math.random() * (CONFIG.ANNOUNCE_MAX - CONFIG.ANNOUNCE_MIN)
-        if timer >= interval then
-            timer = 0
-            sendChat("[ANNOUNCEMENT] i will not stop kill all untill someone gives me 4 items")
-        end
-    end)
-end
+-- Clear blacklist button
+local clearBtn = Instance.new("TextButton")
+clearBtn.Size = UDim2.new(0.4, 0, 0, 28)
+clearBtn.Position = UDim2.new(0.3, 0, 0, pad + 260 + 5*36 + 10)
+clearBtn.Text = "CLEAR BLACKLIST"
+clearBtn.TextColor3 = Color3.fromRGB(255,255,255)
+clearBtn.BackgroundColor3 = Accent
+clearBtn.BackgroundTransparency = 0.3
+clearBtn.TextSize = 12
+clearBtn.Font = Enum.Font.GothamBold
+clearBtn.BorderSizePixel = 0
+clearBtn.Parent = contentContainer
+local clearCorner = Instance.new("UICorner")
+clearCorner.CornerRadius = UDim.new(0, 8)
+clearCorner.Parent = clearBtn
+clearBtn.MouseButton1Click:Connect(clearVisited)
 
-local function startSystem()
-    if isActive then return end
+-- START/STOP logic
+startBtn.MouseButton1Click:Connect(function()
+    if isActive then
+        stopSystem()
+        startBtn.Text = "START"
+        statusDot.BackgroundColor3 = Color3.fromRGB(255,80,80)
+        statusLabel.Text = "OFFLINE"
+        statusLabel.TextColor3 = Color3.fromRGB(180,180,190)
+    else
+        startSystem()
+        startBtn.Text = "STOP"
+        statusDot.BackgroundColor3 = Color3.fromRGB(100,255,100)
+        statusLabel.Text = "ONLINE"
+        statusLabel.TextColor3 = Color3.fromRGB(100,255,100)
+    end
+    updateBlacklistCounter()
+end)
+
+if getgenv().MM2_ACTIVE then
     isActive = true
-    getgenv().MM2_ACTIVE = true
     firstWarningSent = false
     savePosition()
-    sendChat("[ANNOUNCEMENT] i will not stop kill all untill someone gives me 4 items")
     startAnnounceLoop()
     startFlingLoop()
     if CONFIG.AUTO_TRADE then
         AUTO_TRADE_ENABLED = true
         setupTradeListener()
     end
-end
-
-local function stopSystem()
-    isActive = false
-    getgenv().MM2_ACTIVE = false
-    if announcementConnection then announcementConnection:Disconnect(); announcementConnection = nil end
-    if flingCoroutine then coroutine.close(flingCoroutine); flingCoroutine = nil end
-    stopTradeListener()
-    restorePosition()
-end
-
-local function closeSystem()
-    stopSystem()
-    getgenv().SCRIPT_RUNNING = false
-    getgenv().KEEP_ALIVE = false
-    if gui then gui:Destroy(); gui = nil end
-end
-
-local function reloadScript()
-    if getgenv().SCRIPT_URL then
-        pcall(function()
-            local url = getgenv().SCRIPT_URL
-            local success, result = pcall(function()
-                return game:HttpGet(url)
-            end)
-            if success and result then
-                loadstring(result)()
-            else
-                warn("Failed to fetch script from URL.")
-            end
-        end)
-    end
-end
-
--- ===== GUI =====
-local function createDawnHubGUI()
-    if gui then pcall(function() gui:Destroy() end); gui = nil end
-
-    gui = Instance.new("ScreenGui")
-    gui.Name = "DawnHub"
-    gui.ResetOnSpawn = false
-    gui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
-    gui.DisplayOrder = 999
-
-    local parentSuccess = false
-    pcall(function()
-        gui.Parent = player:WaitForChild("PlayerGui")
-        parentSuccess = true
-    end)
-    if not parentSuccess then
-        pcall(function()
-            gui.Parent = game:GetService("CoreGui")
-            parentSuccess = true
-        end)
-    end
-    if not parentSuccess then
-        warn("Could not parent GUI.")
-        return nil
-    end
-
-    local window = Instance.new("Frame")
-    window.Size = fullSize
-    window.Position = UDim2.new(0.5, -210, 0.5, -280)
-    window.BackgroundColor3 = Color3.fromRGB(18, 18, 24)
-    window.BackgroundTransparency = 0.05
-    window.BorderSizePixel = 0
-    window.ClipsDescendants = true
-    window.Active = false
-    window.Draggable = false
-    window.Parent = gui
-
-    local corner = Instance.new("UICorner")
-    corner.CornerRadius = UDim.new(0, 16)
-    corner.Parent = window
-
-    local border = Instance.new("UIStroke")
-    border.Thickness = 1.5
-    border.Transparency = 0.6
-    border.Color = Accent
-    border.Parent = window
-
-    -- Top Bar
-    local topBar = Instance.new("Frame")
-    topBar.Size = UDim2.new(1, 0, 0, 40)
-    topBar.BackgroundColor3 = Color3.fromRGB(18, 18, 24)
-    topBar.BackgroundTransparency = 0.1
-    topBar.BorderSizePixel = 0
-    topBar.Parent = window
-
-    local dragStart = nil
-    local dragConn = nil
-    topBar.InputBegan:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.MouseButton1 then
-            dragStart = input.Position
-            dragConn = UserInputService.InputChanged:Connect(function(i)
-                if i.UserInputType == Enum.UserInputType.MouseMovement then
-                    local delta = i.Position - dragStart
-                    window.Position = window.Position + UDim2.new(0, delta.X, 0, delta.Y)
-                    dragStart = i.Position
-                end
-            end)
-        end
-    end)
-    topBar.InputEnded:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.MouseButton1 then
-            if dragConn then dragConn:Disconnect(); dragConn = nil end
-            dragStart = nil
-        end
-    end)
-
-    local logo = Instance.new("TextLabel")
-    logo.Size = UDim2.new(0.5, 0, 1, 0)
-    logo.Position = UDim2.new(0, 16, 0, 0)
-    logo.BackgroundTransparency = 1
-    logo.Text = "DAWN.HUB"
-    logo.TextColor3 = Accent
-    logo.TextSize = 18
-    logo.Font = Enum.Font.GothamBold
-    logo.TextXAlignment = Enum.TextXAlignment.Left
-    logo.Parent = topBar
-
-    local closeBtn = Instance.new("TextButton")
-    closeBtn.Size = UDim2.new(0, 28, 0, 28)
-    closeBtn.Position = UDim2.new(1, -36, 0.5, -14)
-    closeBtn.Text = "×"
-    closeBtn.TextColor3 = Color3.new(1,1,1)
-    closeBtn.BackgroundColor3 = Color3.fromRGB(255,75,75)
-    closeBtn.BackgroundTransparency = 0.3
-    closeBtn.TextSize = 18
-    closeBtn.Font = Enum.Font.GothamBold
-    closeBtn.BorderSizePixel = 0
-    closeBtn.Parent = topBar
-    local closeCorner = Instance.new("UICorner")
-    closeCorner.CornerRadius = UDim.new(1,0)
-    closeCorner.Parent = closeBtn
-    closeBtn.MouseButton1Click:Connect(closeSystem)
-
-    local minBtn = Instance.new("TextButton")
-    minBtn.Size = UDim2.new(0, 28, 0, 28)
-    minBtn.Position = UDim2.new(1, -70, 0.5, -14)
-    minBtn.Text = "−"
-    minBtn.TextColor3 = Color3.new(1,1,1)
-    minBtn.BackgroundColor3 = Color3.fromRGB(255,200,50)
-    minBtn.BackgroundTransparency = 0.3
-    minBtn.TextSize = 18
-    minBtn.Font = Enum.Font.GothamBold
-    minBtn.BorderSizePixel = 0
-    minBtn.Parent = topBar
-    local minCorner = Instance.new("UICorner")
-    minCorner.CornerRadius = UDim.new(1,0)
-    minCorner.Parent = minBtn
-
-    local contentContainer = Instance.new("Frame")
-    contentContainer.Size = UDim2.new(1, 0, 1, -40)
-    contentContainer.Position = UDim2.new(0, 0, 0, 40)
-    contentContainer.BackgroundTransparency = 1
-    contentContainer.Parent = window
-
-    local pad = 20
-
-    -- Status
-    local statusFrame = Instance.new("Frame")
-    statusFrame.Size = UDim2.new(1, -pad*2, 0, 40)
-    statusFrame.Position = UDim2.new(0, pad, 0, pad)
-    statusFrame.BackgroundTransparency = 1
-    statusFrame.Parent = contentContainer
-
-    local statusDot = Instance.new("Frame")
-    statusDot.Size = UDim2.new(0, 12, 0, 12)
-    statusDot.Position = UDim2.new(0, 0, 0.5, -6)
-    statusDot.BackgroundColor3 = Color3.fromRGB(255,80,80)
-    statusDot.BorderSizePixel = 0
-    statusDot.Parent = statusFrame
-    local dotCorner = Instance.new("UICorner")
-    dotCorner.CornerRadius = UDim.new(1,0)
-    dotCorner.Parent = statusDot
-
-    task.spawn(function()
-        while statusDot.Parent do
-            TweenService:Create(statusDot, TweenInfo.new(1), {Size = UDim2.new(0,16,0,16)}):Play()
-            task.wait(1)
-            TweenService:Create(statusDot, TweenInfo.new(1), {Size = UDim2.new(0,10,0,10)}):Play()
-            task.wait(1)
-        end
-    end)
-
-    local statusLabel = Instance.new("TextLabel")
-    statusLabel.Size = UDim2.new(0.5, 0, 1, 0)
-    statusLabel.Position = UDim2.new(0, 20, 0, 0)
-    statusLabel.BackgroundTransparency = 1
-    statusLabel.Text = "OFFLINE"
-    statusLabel.TextColor3 = Color3.fromRGB(180,180,190)
-    statusLabel.TextSize = 14
-    statusLabel.Font = Enum.Font.GothamBold
-    statusLabel.TextXAlignment = Enum.TextXAlignment.Left
-    statusLabel.Name = "StatusLabel"
-    statusLabel.Parent = statusFrame
-
-    local blacklistLabel = Instance.new("TextLabel")
-    blacklistLabel.Size = UDim2.new(0.3, 0, 1, 0)
-    blacklistLabel.Position = UDim2.new(0.7, 0, 0, 0)
-    blacklistLabel.BackgroundTransparency = 1
-    blacklistLabel.Text = "🚫 0"
-    blacklistLabel.TextColor3 = Color3.fromRGB(180,180,190)
-    blacklistLabel.TextSize = 14
-    blacklistLabel.Font = Enum.Font.GothamBold
-    blacklistLabel.TextXAlignment = Enum.TextXAlignment.Right
-    blacklistLabel.Name = "BlacklistLabel"
-    blacklistLabel.Parent = statusFrame
-    blacklistLabelRef = blacklistLabel
-
-    -- START button
-    local startBtn = Instance.new("TextButton")
-    startBtn.Size = UDim2.new(1, -pad*2, 0, 50)
-    startBtn.Position = UDim2.new(0, pad, 0, pad + 50)
-    startBtn.Text = "START"
-    startBtn.TextColor3 = Color3.fromRGB(255,255,255)
-    startBtn.BackgroundColor3 = Accent
-    startBtn.BackgroundTransparency = 0.15
-    startBtn.TextSize = 18
-    startBtn.Font = Enum.Font.GothamBold
-    startBtn.BorderSizePixel = 0
-    startBtn.Parent = contentContainer
-    local startCorner = Instance.new("UICorner")
-    startCorner.CornerRadius = UDim.new(0, 12)
-    startCorner.Parent = startBtn
-    local startGrad = Instance.new("UIGradient")
-    startGrad.Color = ColorSequence.new({
-        ColorSequenceKeypoint.new(0, Accent),
-        ColorSequenceKeypoint.new(1, Color3.fromRGB(255,110,180))
-    })
-    startGrad.Rotation = 45
-    startGrad.Parent = startBtn
-
-    local startOriginalSize = startBtn.Size
-    startBtn.MouseEnter:Connect(function()
-        TweenService:Create(startBtn, TweenInfo.new(0.15), {Size = startOriginalSize + UDim2.new(0,8,0,4)}):Play()
-    end)
-    startBtn.MouseLeave:Connect(function()
-        TweenService:Create(startBtn, TweenInfo.new(0.15), {Size = startOriginalSize}):Play()
-    end)
-
-    -- Secondary buttons
-    local secondaryRow = Instance.new("Frame")
-    secondaryRow.Size = UDim2.new(1, -pad*2, 0, 44)
-    secondaryRow.Position = UDim2.new(0, pad, 0, pad + 110)
-    secondaryRow.BackgroundTransparency = 1
-    secondaryRow.Parent = contentContainer
-
-    local hopBtn = Instance.new("TextButton")
-    hopBtn.Size = UDim2.new(0.48, -6, 1, 0)
-    hopBtn.Position = UDim2.new(0, 0, 0, 0)
-    hopBtn.Text = "S-HOP"
-    hopBtn.TextColor3 = Color3.fromRGB(255,255,255)
-    hopBtn.BackgroundColor3 = Color3.fromRGB(50,50,80)
-    hopBtn.BackgroundTransparency = 0.3
-    hopBtn.TextSize = 15
-    hopBtn.Font = Enum.Font.GothamBold
-    hopBtn.BorderSizePixel = 0
-    hopBtn.Parent = secondaryRow
-    local hopCorner = Instance.new("UICorner")
-    hopCorner.CornerRadius = UDim.new(0, 10)
-    hopCorner.Parent = hopBtn
-    hopBtn.ZIndex = 10
-    hopBtn.MouseButton1Click:Connect(serverHop)
-
-    local reloadBtn = Instance.new("TextButton")
-    reloadBtn.Size = UDim2.new(0.48, -6, 1, 0)
-    reloadBtn.Position = UDim2.new(0.52, 0, 0, 0)
-    reloadBtn.Text = "↻ RELOAD"
-    reloadBtn.TextColor3 = Color3.fromRGB(255,255,255)
-    reloadBtn.BackgroundColor3 = Color3.fromRGB(70,70,100)
-    reloadBtn.BackgroundTransparency = 0.3
-    reloadBtn.TextSize = 15
-    reloadBtn.Font = Enum.Font.GothamBold
-    reloadBtn.BorderSizePixel = 0
-    reloadBtn.Parent = secondaryRow
-    local reloadCorner = Instance.new("UICorner")
-    reloadCorner.CornerRadius = UDim.new(0, 10)
-    reloadCorner.Parent = reloadBtn
-    reloadBtn.ZIndex = 10
-    reloadBtn.MouseButton1Click:Connect(reloadScript)
-
-    -- Force slider
-    local sliderFrame = Instance.new("Frame")
-    sliderFrame.Size = UDim2.new(1, -pad*2, 0, 50)
-    sliderFrame.Position = UDim2.new(0, pad, 0, pad + 170)
-    sliderFrame.BackgroundTransparency = 1
-    sliderFrame.Parent = contentContainer
-
-    local sliderLabel = Instance.new("TextLabel")
-    sliderLabel.Size = UDim2.new(0.3, 0, 0.5, 0)
-    sliderLabel.Position = UDim2.new(0, 0, 0, 0)
-    sliderLabel.BackgroundTransparency = 1
-    sliderLabel.Text = "FORCE"
-    sliderLabel.TextColor3 = Color3.fromRGB(180,180,190)
-    sliderLabel.TextSize = 14
-    sliderLabel.Font = Enum.Font.GothamBold
-    sliderLabel.TextXAlignment = Enum.TextXAlignment.Left
-    sliderLabel.Parent = sliderFrame
-
-    local forceValueLabel = Instance.new("TextLabel")
-    forceValueLabel.Size = UDim2.new(0.3, 0, 0.5, 0)
-    forceValueLabel.Position = UDim2.new(0.7, 0, 0, 0)
-    forceValueLabel.BackgroundTransparency = 1
-    forceValueLabel.Text = "5.0e7"
-    forceValueLabel.TextColor3 = Color3.fromRGB(180,180,190)
-    forceValueLabel.TextSize = 14
-    forceValueLabel.Font = Enum.Font.GothamBold
-    forceValueLabel.TextXAlignment = Enum.TextXAlignment.Right
-    forceValueLabel.Name = "ForceValue"
-    forceValueLabel.Parent = sliderFrame
-
-    local sliderTrack = Instance.new("Frame")
-    sliderTrack.Size = UDim2.new(1, 0, 0.35, 0)
-    sliderTrack.Position = UDim2.new(0, 0, 0.65, 0)
-    sliderTrack.BackgroundColor3 = Color3.fromRGB(28,28,37)
-    sliderTrack.BackgroundTransparency = 0.3
-    sliderTrack.BorderSizePixel = 0
-    sliderTrack.Parent = sliderFrame
-    local stCorner = Instance.new("UICorner")
-    stCorner.CornerRadius = UDim.new(0, 999)
-    stCorner.Parent = sliderTrack
-
-    local sliderFill = Instance.new("Frame")
-    sliderFill.Size = UDim2.new(0.5, 0, 1, 0)
-    sliderFill.BackgroundColor3 = Accent
-    sliderFill.BackgroundTransparency = 0.2
-    sliderFill.BorderSizePixel = 0
-    sliderFill.Parent = sliderTrack
-    local sfCorner = Instance.new("UICorner")
-    sfCorner.CornerRadius = UDim.new(0, 999)
-    sfCorner.Parent = sliderFill
-
-    local handle = Instance.new("Frame")
-    handle.Size = UDim2.new(0, 18, 0, 18)
-    handle.Position = UDim2.new(0.5, -9, 0.5, -9)
-    handle.BackgroundColor3 = Accent
-    handle.BackgroundTransparency = 0.3
-    handle.BorderSizePixel = 0
-    handle.Parent = sliderTrack
-    local hCorner = Instance.new("UICorner")
-    hCorner.CornerRadius = UDim.new(1, 0)
-    hCorner.Parent = handle
-    local handleStroke = Instance.new("UIStroke")
-    handleStroke.Thickness = 2
-    handleStroke.Color = Color3.new(1,1,1)
-    handleStroke.Parent = handle
-
-    local dragging = false
-    local function updateSlider(x)
-        local absPos = sliderTrack.AbsolutePosition
-        local size = sliderTrack.AbsoluteSize
-        local relX = math.clamp((x - absPos.X) / size.X, 0, 1)
-        sliderFill.Size = UDim2.new(relX, 0, 1, 0)
-        handle.Position = UDim2.new(relX, -9, 0.5, -9)
-        local force = relX * 90000000
-        if force < 1000000 then force = 1000000 end
-        CONFIG.FLING_FORCE = force
-        forceValueLabel.Text = string.format("%.1e", force)
-    end
-
-    sliderTrack.InputBegan:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.MouseButton1 then
-            dragging = true
-            updateSlider(input.Position.X)
-        end
-    end)
-
-    UserInputService.InputChanged:Connect(function(input)
-        if dragging and input.UserInputType == Enum.UserInputType.MouseMovement then
-            updateSlider(input.Position.X)
-        end
-    end)
-
-    UserInputService.InputEnded:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.MouseButton1 then
-            dragging = false
-        end
-    end)
-
-    -- Settings toggles (including Auto-Trade)
-    local settingsHeader = Instance.new("TextLabel")
-    settingsHeader.Size = UDim2.new(1, -pad*2, 0, 24)
-    settingsHeader.Position = UDim2.new(0, pad, 0, pad + 230)
-    settingsHeader.BackgroundTransparency = 1
-    settingsHeader.Text = "SETTINGS"
-    settingsHeader.TextColor3 = Color3.fromRGB(110,110,121)
-    settingsHeader.TextSize = 14
-    settingsHeader.Font = Enum.Font.GothamBold
-    settingsHeader.TextXAlignment = Enum.TextXAlignment.Left
-    settingsHeader.Parent = contentContainer
-
-    local toggleData = {
-        {label = "ANNOUNCEMENTS", var = "ANNOUNCEMENTS", default = true},
-        {label = "FLING ENABLED", var = "FLING_ENABLED", default = true},
-        {label = "RESET POSITION", var = "RESET_POS", default = true},
-        {label = "ANTI-FLING", var = "ANTI_FLING", default = true},
-        {label = "AUTO TRADE", var = "AUTO_TRADE", default = false},
-    }
-
-    for i, data in ipairs(toggleData) do
-        local row = Instance.new("Frame")
-        row.Size = UDim2.new(1, -pad*2, 0, 30)
-        row.Position = UDim2.new(0, pad, 0, pad + 260 + (i-1)*36)
-        row.BackgroundTransparency = 1
-        row.Parent = contentContainer
-
-        local lbl = Instance.new("TextLabel")
-        lbl.Size = UDim2.new(0.6, 0, 1, 0)
-        lbl.BackgroundTransparency = 1
-        lbl.Text = data.label
-        lbl.TextColor3 = Color3.fromRGB(180,180,190)
-        lbl.TextSize = 13
-        lbl.Font = Enum.Font.GothamBold
-        lbl.TextXAlignment = Enum.TextXAlignment.Left
-        lbl.Parent = row
-
-        local switchBg = Instance.new("TextButton")
-        switchBg.Size = UDim2.new(0, 44, 0, 24)
-        switchBg.Position = UDim2.new(0.75, 0, 0.5, -12)
-        switchBg.Text = ""
-        switchBg.BackgroundColor3 = Color3.fromRGB(40,40,55)
-        switchBg.BackgroundTransparency = 0.2
-        switchBg.BorderSizePixel = 0
-        switchBg.Parent = row
-        local swCorner = Instance.new("UICorner")
-        swCorner.CornerRadius = UDim.new(0, 999)
-        swCorner.Parent = switchBg
-
-        local knob = Instance.new("Frame")
-        knob.Size = UDim2.new(0, 18, 0, 18)
-        knob.Position = UDim2.new(0, 2, 0.5, -9)
-        knob.BackgroundColor3 = Color3.fromRGB(255,255,255)
-        knob.BackgroundTransparency = 0.8
-        knob.BorderSizePixel = 0
-        knob.Parent = switchBg
-        local knobCorner = Instance.new("UICorner")
-        knobCorner.CornerRadius = UDim.new(1, 0)
-        knobCorner.Parent = knob
-
-        local isOn = data.default
-        local function updateSwitch()
-            if isOn then
-                switchBg.BackgroundColor3 = Accent
-                switchBg.BackgroundTransparency = 0.2
-                knob.Position = UDim2.new(1, -20, 0.5, -9)
-                knob.BackgroundColor3 = Color3.new(1,1,1)
-                knob.BackgroundTransparency = 0
-            else
-                switchBg.BackgroundColor3 = Color3.fromRGB(40,40,55)
-                switchBg.BackgroundTransparency = 0.2
-                knob.Position = UDim2.new(0, 2, 0.5, -9)
-                knob.BackgroundColor3 = Color3.fromRGB(255,255,255)
-                knob.BackgroundTransparency = 0.8
-            end
-        end
-        updateSwitch()
-
-        switchBg.MouseButton1Click:Connect(function()
-            isOn = not isOn
-            CONFIG[data.var] = isOn
-            updateSwitch()
-            if data.var == "AUTO_TRADE" then
-                AUTO_TRADE_ENABLED = isOn
-                if isOn and isActive then
-                    setupTradeListener()
-                elseif not isOn then
-                    stopTradeListener()
-                end
-            end
-            if data.var == "ANNOUNCEMENTS" and isActive then
-                if isOn then startAnnounceLoop() else
-                    if announcementConnection then announcementConnection:Disconnect(); announcementConnection = nil end
-                end
-            end
-        end)
-    end
-
-    -- Clear blacklist button
-    local clearBtn = Instance.new("TextButton")
-    clearBtn.Size = UDim2.new(0.4, 0, 0, 28)
-    clearBtn.Position = UDim2.new(0.3, 0, 0, pad + 260 + 5*36 + 10)
-    clearBtn.Text = "CLEAR BLACKLIST"
-    clearBtn.TextColor3 = Color3.fromRGB(255,255,255)
-    clearBtn.BackgroundColor3 = Accent
-    clearBtn.BackgroundTransparency = 0.3
-    clearBtn.TextSize = 12
-    clearBtn.Font = Enum.Font.GothamBold
-    clearBtn.BorderSizePixel = 0
-    clearBtn.Parent = contentContainer
-    local clearCorner = Instance.new("UICorner")
-    clearCorner.CornerRadius = UDim.new(0, 8)
-    clearCorner.Parent = clearBtn
-    clearBtn.MouseButton1Click:Connect(clearVisited)
-
-    -- START/STOP logic
-    startBtn.MouseButton1Click:Connect(function()
-        if isActive then
-            stopSystem()
-            startBtn.Text = "START"
-            statusDot.BackgroundColor3 = Color3.fromRGB(255,80,80)
-            statusLabel.Text = "OFFLINE"
-            statusLabel.TextColor3 = Color3.fromRGB(180,180,190)
-        else
-            startSystem()
-            startBtn.Text = "STOP"
-            statusDot.BackgroundColor3 = Color3.fromRGB(100,255,100)
-            statusLabel.Text = "ONLINE"
-            statusLabel.TextColor3 = Color3.fromRGB(100,255,100)
-        end
-        updateBlacklistCounter()
-    end)
-
-    if getgenv().MM2_ACTIVE then
-        isActive = true
-        firstWarningSent = false
-        savePosition()
-        startAnnounceLoop()
-        startFlingLoop()
-        if CONFIG.AUTO_TRADE then
-            AUTO_TRADE_ENABLED = true
-            setupTradeListener()
-        end
-        startBtn.Text = "STOP"
-        statusDot.BackgroundColor3 = Color3.fromRGB(100,255,100)
-        statusLabel.Text = "ONLINE"
-        statusLabel.TextColor3 = Color3.fromRGB(100,255,100)
-        updateBlacklistCounter()
-    end
-
+    startBtn.Text = "STOP"
+    statusDot.BackgroundColor3 = Color3.fromRGB(100,255,100)
+    statusLabel.Text = "ONLINE"
+    statusLabel.TextColor3 = Color3.fromRGB(100,255,100)
     updateBlacklistCounter()
-
-    -- Minimize
-    local function toggleMinimize()
-        isMinimized = not isMinimized
-        local targetSize = isMinimized and minimizedSize or fullSize
-        local centerOffset = isMinimized and -70 or -210
-        local verticalOffset = isMinimized and -20 or -280
-        local targetPos = UDim2.new(0.5, centerOffset, 0.5, verticalOffset)
-        if isMinimized then
-            contentContainer.Visible = false
-            TweenService:Create(window, TweenInfo.new(0.35, Enum.EasingStyle.Quad, Enum.EasingDirection.InOut), {
-                Size = targetSize,
-                Position = targetPos
-            }):Play()
-            minBtn.Text = "+"
-        else
-            TweenService:Create(window, TweenInfo.new(0.35, Enum.EasingStyle.Quad, Enum.EasingDirection.InOut), {
-                Size = targetSize,
-                Position = targetPos
-            }):Play()
-            task.wait(0.35)
-            contentContainer.Visible = true
-            minBtn.Text = "−"
-        end
-    end
-    minBtn.MouseButton1Click:Connect(toggleMinimize)
-
-    return gui
 end
 
--- ===== INIT =====
-spawn(function()
-    task.wait(1)
-    if isVisited() then
-        local attempts = 0
-        while isVisited() and attempts < 5 do
-            attempts = attempts + 1
-            task.wait(1)
-            local visited = addVisitedServer()
-            local options = Instance.new("TeleportOptions")
-            options:SetTeleportData({ visitedServers = visited })
-            pcall(function() TeleportService:Teleport(game.PlaceId, player, options) end)
-        end
-        if attempts >= 5 then clearVisited() end
-        return
-    end
-end)
+updateBlacklistCounter()
 
-local success, err = pcall(createDawnHubGUI)
-if success then
-    print("Dawn Hub loaded.")
-else
-    warn("UI error: " .. tostring(err))
+-- Minimize
+local function toggleMinimize()
+    isMinimized = not isMinimized
+    local targetSize = isMinimized and minimizedSize or fullSize
+    local centerOffset = isMinimized and -70 or -210
+    local verticalOffset = isMinimized and -20 or -280
+    local targetPos = UDim2.new(0.5, centerOffset, 0.5, verticalOffset)
+    if isMinimized then
+        contentContainer.Visible = false
+        TweenService:Create(window, TweenInfo.new(0.35, Enum.EasingStyle.Quad, Enum.EasingDirection.InOut), {
+            Size = targetSize,
+            Position = targetPos
+        }):Play()
+        minBtn.Text = "+"
+    else
+        TweenService:Create(window, TweenInfo.new(0.35, Enum.EasingStyle.Quad, Enum.EasingDirection.InOut), {
+            Size = targetSize,
+            Position = targetPos
+        }):Play()
+        task.wait(0.35)
+        contentContainer.Visible = true
+        minBtn.Text = "−"
+    end
 end
+minBtn.MouseButton1Click:Connect(toggleMinimize)
+
+return gui
+end
+
+-- ===== INIT ===== spawn(function() task.wait(1) if isVisited() then local attempts = 0 while isVisited() and attempts < 5 do attempts = attempts + 1 task.wait(1) local visited = addVisitedServer() local options = Instance.new("TeleportOptions") options:SetTeleportData({ visitedServers = visited }) pcall(function() TeleportService:Teleport(game.PlaceId, player, options) end) end if attempts >= 5 then clearVisited() end return end end)
+
+local success, err = pcall(createDawnHubGUI) if success then print("Dawn Hub loaded.") else warn("UI error: " .. tostring(err)) end
+
