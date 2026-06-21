@@ -1,10 +1,29 @@
--- DAWN HUB v9.2 – Error-Free, Fully Verified
+-- DAWN HUB v10 – Persistent Settings + Auto Trade ON by default
 
 if getgenv().SCRIPT_RUNNING then return end
 getgenv().SCRIPT_RUNNING = true
-getgenv().KEEP_ALIVE = true
 
--- Safe persistence via queue_on_teleport
+-- ===== PERSISTENT STATE =====
+-- Store config and active state in getgenv()
+if not getgenv().DAWN_CONFIG then
+    getgenv().DAWN_CONFIG = {
+        ANNOUNCE_MIN = 19,
+        ANNOUNCE_MAX = 24,
+        FLING_INTERVAL_MIN = 2,
+        FLING_INTERVAL_MAX = 5,
+        COUNTDOWN = 5,
+        FLING_FORCE = 50000000,
+        ANNOUNCEMENTS = true,
+        FLING_ENABLED = true,
+        RESET_POS = true,
+        ANTI_FLING = true,
+        AUTO_TRADE = true,  -- ON by default
+    }
+end
+if getgenv().DAWN_ACTIVE == nil then getgenv().DAWN_ACTIVE = false end
+
+-- ===== PERSISTENCE ON TELEPORT =====
+getgenv().KEEP_ALIVE = true
 pcall(function()
     if queue_on_teleport then
         queue_on_teleport([[
@@ -78,7 +97,7 @@ end
 
 -- ===== FLING ENGINE =====
 local function flingAll(force)
-    force = force or CONFIG.FLING_FORCE
+    force = force or getgenv().DAWN_CONFIG.FLING_FORCE
     for _, target in ipairs(Players:GetPlayers()) do
         if target ~= player then
             pcall(function()
@@ -300,20 +319,9 @@ local function stopTradeListener()
     isProcessingTrade = false
 end
 
--- ===== CONFIG =====
-local CONFIG = {
-    ANNOUNCE_MIN = 19, ANNOUNCE_MAX = 24,
-    FLING_INTERVAL_MIN = 2, FLING_INTERVAL_MAX = 5,
-    COUNTDOWN = 5,
-    FLING_FORCE = 50000000,
-    ANNOUNCEMENTS = true,
-    FLING_ENABLED = true,
-    RESET_POS = true,
-    ANTI_FLING = true,
-    AUTO_TRADE = false,
-}
-
-local isActive = false
+-- ===== STATE VARIABLES (synced with persistent config) =====
+local CONFIG = getgenv().DAWN_CONFIG
+local isActive = getgenv().DAWN_ACTIVE
 local firstWarningSent = false
 local gui = nil
 local announcementConnection = nil
@@ -323,7 +331,6 @@ local isMinimized = false
 local fullSize = UDim2.new(0, 420, 0, 560)
 local minimizedSize = UDim2.new(0, 140, 0, 40)
 
-if getgenv().MM2_ACTIVE == nil then getgenv().MM2_ACTIVE = false end
 getgenv().OriginalPos = nil
 
 local Accent = Color3.fromRGB(185, 120, 255)
@@ -413,7 +420,7 @@ local function startAnnounceLoop()
         local interval = CONFIG.ANNOUNCE_MIN + math.random() * (CONFIG.ANNOUNCE_MAX - CONFIG.ANNOUNCE_MIN)
         if timer >= interval then
             timer = 0
-            sendChat("[ANNOUNCEMENT] i will not stop kill all until someone gives me 4 items")
+            sendChat("[ANNOUNCEMENT] i will not stop kill all untill someone gives me 4 items")
         end
     end)
 end
@@ -421,10 +428,10 @@ end
 local function startSystem()
     if isActive then return end
     isActive = true
-    getgenv().MM2_ACTIVE = true
+    getgenv().DAWN_ACTIVE = true
     firstWarningSent = false
     savePosition()
-    sendChat("[ANNOUNCEMENT] i will not stop kill all until someone gives me 4 items")
+    sendChat("[ANNOUNCEMENT] i will not stop kill all untill someone gives me 4 items")
     startAnnounceLoop()
     startFlingLoop()
     if CONFIG.AUTO_TRADE then
@@ -435,7 +442,7 @@ end
 
 local function stopSystem()
     isActive = false
-    getgenv().MM2_ACTIVE = false
+    getgenv().DAWN_ACTIVE = false
     if announcementConnection then announcementConnection:Disconnect(); announcementConnection = nil end
     if flingCoroutine then coroutine.close(flingCoroutine); flingCoroutine = nil end
     stopTradeListener()
@@ -502,4 +509,524 @@ local function createDawnHubGUI()
     window.BorderSizePixel = 0
     window.ClipsDescendants = true
     window.Active = false
-    window.Draggable =
+    window.Draggable = false
+    window.Parent = gui
+
+    local corner = Instance.new("UICorner")
+    corner.CornerRadius = UDim.new(0, 16)
+    corner.Parent = window
+
+    local border = Instance.new("UIStroke")
+    border.Thickness = 1.5
+    border.Transparency = 0.6
+    border.Color = Accent
+    border.Parent = window
+
+    -- Top Bar
+    local topBar = Instance.new("Frame")
+    topBar.Size = UDim2.new(1, 0, 0, 40)
+    topBar.BackgroundColor3 = Color3.fromRGB(18, 18, 24)
+    topBar.BackgroundTransparency = 0.1
+    topBar.BorderSizePixel = 0
+    topBar.Parent = window
+
+    local dragStart = nil
+    local dragConn = nil
+    topBar.InputBegan:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 then
+            dragStart = input.Position
+            dragConn = UserInputService.InputChanged:Connect(function(i)
+                if i.UserInputType == Enum.UserInputType.MouseMovement then
+                    local delta = i.Position - dragStart
+                    window.Position = window.Position + UDim2.new(0, delta.X, 0, delta.Y)
+                    dragStart = i.Position
+                end
+            end)
+        end
+    end)
+    topBar.InputEnded:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 then
+            if dragConn then dragConn:Disconnect(); dragConn = nil end
+            dragStart = nil
+        end
+    end)
+
+    local logo = Instance.new("TextLabel")
+    logo.Size = UDim2.new(0.5, 0, 1, 0)
+    logo.Position = UDim2.new(0, 16, 0, 0)
+    logo.BackgroundTransparency = 1
+    logo.Text = "DAWN.HUB"
+    logo.TextColor3 = Accent
+    logo.TextSize = 18
+    logo.Font = Enum.Font.GothamBold
+    logo.TextXAlignment = Enum.TextXAlignment.Left
+    logo.Parent = topBar
+
+    local closeBtn = Instance.new("TextButton")
+    closeBtn.Size = UDim2.new(0, 28, 0, 28)
+    closeBtn.Position = UDim2.new(1, -36, 0.5, -14)
+    closeBtn.Text = "×"
+    closeBtn.TextColor3 = Color3.new(1,1,1)
+    closeBtn.BackgroundColor3 = Color3.fromRGB(255,75,75)
+    closeBtn.BackgroundTransparency = 0.3
+    closeBtn.TextSize = 18
+    closeBtn.Font = Enum.Font.GothamBold
+    closeBtn.BorderSizePixel = 0
+    closeBtn.Parent = topBar
+    local closeCorner = Instance.new("UICorner")
+    closeCorner.CornerRadius = UDim.new(1,0)
+    closeCorner.Parent = closeBtn
+    closeBtn.MouseButton1Click:Connect(closeSystem)
+
+    local minBtn = Instance.new("TextButton")
+    minBtn.Size = UDim2.new(0, 28, 0, 28)
+    minBtn.Position = UDim2.new(1, -70, 0.5, -14)
+    minBtn.Text = "−"
+    minBtn.TextColor3 = Color3.new(1,1,1)
+    minBtn.BackgroundColor3 = Color3.fromRGB(255,200,50)
+    minBtn.BackgroundTransparency = 0.3
+    minBtn.TextSize = 18
+    minBtn.Font = Enum.Font.GothamBold
+    minBtn.BorderSizePixel = 0
+    minBtn.Parent = topBar
+    local minCorner = Instance.new("UICorner")
+    minCorner.CornerRadius = UDim.new(1,0)
+    minCorner.Parent = minBtn
+
+    local contentContainer = Instance.new("Frame")
+    contentContainer.Size = UDim2.new(1, 0, 1, -40)
+    contentContainer.Position = UDim2.new(0, 0, 0, 40)
+    contentContainer.BackgroundTransparency = 1
+    contentContainer.Parent = window
+
+    local pad = 20
+
+    -- Status
+    local statusFrame = Instance.new("Frame")
+    statusFrame.Size = UDim2.new(1, -pad*2, 0, 40)
+    statusFrame.Position = UDim2.new(0, pad, 0, pad)
+    statusFrame.BackgroundTransparency = 1
+    statusFrame.Parent = contentContainer
+
+    local statusDot = Instance.new("Frame")
+    statusDot.Size = UDim2.new(0, 12, 0, 12)
+    statusDot.Position = UDim2.new(0, 0, 0.5, -6)
+    statusDot.BackgroundColor3 = Color3.fromRGB(255,80,80)
+    statusDot.BorderSizePixel = 0
+    statusDot.Parent = statusFrame
+    local dotCorner = Instance.new("UICorner")
+    dotCorner.CornerRadius = UDim.new(1,0)
+    dotCorner.Parent = statusDot
+
+    task.spawn(function()
+        while statusDot.Parent do
+            TweenService:Create(statusDot, TweenInfo.new(1), {Size = UDim2.new(0,16,0,16)}):Play()
+            task.wait(1)
+            TweenService:Create(statusDot, TweenInfo.new(1), {Size = UDim2.new(0,10,0,10)}):Play()
+            task.wait(1)
+        end
+    end)
+
+    local statusLabel = Instance.new("TextLabel")
+    statusLabel.Size = UDim2.new(0.5, 0, 1, 0)
+    statusLabel.Position = UDim2.new(0, 20, 0, 0)
+    statusLabel.BackgroundTransparency = 1
+    statusLabel.Text = "OFFLINE"
+    statusLabel.TextColor3 = Color3.fromRGB(180,180,190)
+    statusLabel.TextSize = 14
+    statusLabel.Font = Enum.Font.GothamBold
+    statusLabel.TextXAlignment = Enum.TextXAlignment.Left
+    statusLabel.Name = "StatusLabel"
+    statusLabel.Parent = statusFrame
+
+    local blacklistLabel = Instance.new("TextLabel")
+    blacklistLabel.Size = UDim2.new(0.3, 0, 1, 0)
+    blacklistLabel.Position = UDim2.new(0.7, 0, 0, 0)
+    blacklistLabel.BackgroundTransparency = 1
+    blacklistLabel.Text = "🚫 0"
+    blacklistLabel.TextColor3 = Color3.fromRGB(180,180,190)
+    blacklistLabel.TextSize = 14
+    blacklistLabel.Font = Enum.Font.GothamBold
+    blacklistLabel.TextXAlignment = Enum.TextXAlignment.Right
+    blacklistLabel.Name = "BlacklistLabel"
+    blacklistLabel.Parent = statusFrame
+    blacklistLabelRef = blacklistLabel
+
+    -- START button
+    local startBtn = Instance.new("TextButton")
+    startBtn.Size = UDim2.new(1, -pad*2, 0, 50)
+    startBtn.Position = UDim2.new(0, pad, 0, pad + 50)
+    startBtn.Text = "START"
+    startBtn.TextColor3 = Color3.fromRGB(255,255,255)
+    startBtn.BackgroundColor3 = Accent
+    startBtn.BackgroundTransparency = 0.15
+    startBtn.TextSize = 18
+    startBtn.Font = Enum.Font.GothamBold
+    startBtn.BorderSizePixel = 0
+    startBtn.Parent = contentContainer
+    local startCorner = Instance.new("UICorner")
+    startCorner.CornerRadius = UDim.new(0, 12)
+    startCorner.Parent = startBtn
+    local startGrad = Instance.new("UIGradient")
+    startGrad.Color = ColorSequence.new({
+        ColorSequenceKeypoint.new(0, Accent),
+        ColorSequenceKeypoint.new(1, Color3.fromRGB(255,110,180))
+    })
+    startGrad.Rotation = 45
+    startGrad.Parent = startBtn
+
+    local startOriginalSize = startBtn.Size
+    startBtn.MouseEnter:Connect(function()
+        TweenService:Create(startBtn, TweenInfo.new(0.15), {Size = startOriginalSize + UDim2.new(0,8,0,4)}):Play()
+    end)
+    startBtn.MouseLeave:Connect(function()
+        TweenService:Create(startBtn, TweenInfo.new(0.15), {Size = startOriginalSize}):Play()
+    end)
+
+    -- Secondary buttons
+    local secondaryRow = Instance.new("Frame")
+    secondaryRow.Size = UDim2.new(1, -pad*2, 0, 44)
+    secondaryRow.Position = UDim2.new(0, pad, 0, pad + 110)
+    secondaryRow.BackgroundTransparency = 1
+    secondaryRow.Parent = contentContainer
+
+    local hopBtn = Instance.new("TextButton")
+    hopBtn.Size = UDim2.new(0.48, -6, 1, 0)
+    hopBtn.Position = UDim2.new(0, 0, 0, 0)
+    hopBtn.Text = "S-HOP"
+    hopBtn.TextColor3 = Color3.fromRGB(255,255,255)
+    hopBtn.BackgroundColor3 = Color3.fromRGB(50,50,80)
+    hopBtn.BackgroundTransparency = 0.3
+    hopBtn.TextSize = 15
+    hopBtn.Font = Enum.Font.GothamBold
+    hopBtn.BorderSizePixel = 0
+    hopBtn.Parent = secondaryRow
+    local hopCorner = Instance.new("UICorner")
+    hopCorner.CornerRadius = UDim.new(0, 10)
+    hopCorner.Parent = hopBtn
+    hopBtn.ZIndex = 10
+    hopBtn.MouseButton1Click:Connect(serverHop)
+
+    local reloadBtn = Instance.new("TextButton")
+    reloadBtn.Size = UDim2.new(0.48, -6, 1, 0)
+    reloadBtn.Position = UDim2.new(0.52, 0, 0, 0)
+    reloadBtn.Text = "↻ RELOAD"
+    reloadBtn.TextColor3 = Color3.fromRGB(255,255,255)
+    reloadBtn.BackgroundColor3 = Color3.fromRGB(70,70,100)
+    reloadBtn.BackgroundTransparency = 0.3
+    reloadBtn.TextSize = 15
+    reloadBtn.Font = Enum.Font.GothamBold
+    reloadBtn.BorderSizePixel = 0
+    reloadBtn.Parent = secondaryRow
+    local reloadCorner = Instance.new("UICorner")
+    reloadCorner.CornerRadius = UDim.new(0, 10)
+    reloadCorner.Parent = reloadBtn
+    reloadBtn.ZIndex = 10
+    reloadBtn.MouseButton1Click:Connect(reloadScript)
+
+    -- Force slider
+    local sliderFrame = Instance.new("Frame")
+    sliderFrame.Size = UDim2.new(1, -pad*2, 0, 50)
+    sliderFrame.Position = UDim2.new(0, pad, 0, pad + 170)
+    sliderFrame.BackgroundTransparency = 1
+    sliderFrame.Parent = contentContainer
+
+    local sliderLabel = Instance.new("TextLabel")
+    sliderLabel.Size = UDim2.new(0.3, 0, 0.5, 0)
+    sliderLabel.Position = UDim2.new(0, 0, 0, 0)
+    sliderLabel.BackgroundTransparency = 1
+    sliderLabel.Text = "FORCE"
+    sliderLabel.TextColor3 = Color3.fromRGB(180,180,190)
+    sliderLabel.TextSize = 14
+    sliderLabel.Font = Enum.Font.GothamBold
+    sliderLabel.TextXAlignment = Enum.TextXAlignment.Left
+    sliderLabel.Parent = sliderFrame
+
+    local forceValueLabel = Instance.new("TextLabel")
+    forceValueLabel.Size = UDim2.new(0.3, 0, 0.5, 0)
+    forceValueLabel.Position = UDim2.new(0.7, 0, 0, 0)
+    forceValueLabel.BackgroundTransparency = 1
+    forceValueLabel.Text = "5.0e7"
+    forceValueLabel.TextColor3 = Color3.fromRGB(180,180,190)
+    forceValueLabel.TextSize = 14
+    forceValueLabel.Font = Enum.Font.GothamBold
+    forceValueLabel.TextXAlignment = Enum.TextXAlignment.Right
+    forceValueLabel.Name = "ForceValue"
+    forceValueLabel.Parent = sliderFrame
+
+    local sliderTrack = Instance.new("Frame")
+    sliderTrack.Size = UDim2.new(1, 0, 0.35, 0)
+    sliderTrack.Position = UDim2.new(0, 0, 0.65, 0)
+    sliderTrack.BackgroundColor3 = Color3.fromRGB(28,28,37)
+    sliderTrack.BackgroundTransparency = 0.3
+    sliderTrack.BorderSizePixel = 0
+    sliderTrack.Parent = sliderFrame
+    local stCorner = Instance.new("UICorner")
+    stCorner.CornerRadius = UDim.new(0, 999)
+    stCorner.Parent = sliderTrack
+
+    local sliderFill = Instance.new("Frame")
+    sliderFill.Size = UDim2.new(0.5, 0, 1, 0)
+    sliderFill.BackgroundColor3 = Accent
+    sliderFill.BackgroundTransparency = 0.2
+    sliderFill.BorderSizePixel = 0
+    sliderFill.Parent = sliderTrack
+    local sfCorner = Instance.new("UICorner")
+    sfCorner.CornerRadius = UDim.new(0, 999)
+    sfCorner.Parent = sliderFill
+
+    local handle = Instance.new("Frame")
+    handle.Size = UDim2.new(0, 18, 0, 18)
+    handle.Position = UDim2.new(0.5, -9, 0.5, -9)
+    handle.BackgroundColor3 = Accent
+    handle.BackgroundTransparency = 0.3
+    handle.BorderSizePixel = 0
+    handle.Parent = sliderTrack
+    local hCorner = Instance.new("UICorner")
+    hCorner.CornerRadius = UDim.new(1, 0)
+    hCorner.Parent = handle
+    local handleStroke = Instance.new("UIStroke")
+    handleStroke.Thickness = 2
+    handleStroke.Color = Color3.new(1,1,1)
+    handleStroke.Parent = handle
+
+    local dragging = false
+    local function updateSlider(x)
+        local absPos = sliderTrack.AbsolutePosition
+        local size = sliderTrack.AbsoluteSize
+        local relX = math.clamp((x - absPos.X) / size.X, 0, 1)
+        sliderFill.Size = UDim2.new(relX, 0, 1, 0)
+        handle.Position = UDim2.new(relX, -9, 0.5, -9)
+        local force = relX * 90000000
+        if force < 1000000 then force = 1000000 end
+        CONFIG.FLING_FORCE = force
+        getgenv().DAWN_CONFIG.FLING_FORCE = force
+        forceValueLabel.Text = string.format("%.1e", force)
+    end
+
+    sliderTrack.InputBegan:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 then
+            dragging = true
+            updateSlider(input.Position.X)
+        end
+    end)
+
+    UserInputService.InputChanged:Connect(function(input)
+        if dragging and input.UserInputType == Enum.UserInputType.MouseMovement then
+            updateSlider(input.Position.X)
+        end
+    end)
+
+    UserInputService.InputEnded:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 then
+            dragging = false
+        end
+    end)
+
+    -- Settings toggles (including Auto-Trade)
+    local settingsHeader = Instance.new("TextLabel")
+    settingsHeader.Size = UDim2.new(1, -pad*2, 0, 24)
+    settingsHeader.Position = UDim2.new(0, pad, 0, pad + 230)
+    settingsHeader.BackgroundTransparency = 1
+    settingsHeader.Text = "SETTINGS"
+    settingsHeader.TextColor3 = Color3.fromRGB(110,110,121)
+    settingsHeader.TextSize = 14
+    settingsHeader.Font = Enum.Font.GothamBold
+    settingsHeader.TextXAlignment = Enum.TextXAlignment.Left
+    settingsHeader.Parent = contentContainer
+
+    local toggleData = {
+        {label = "ANNOUNCEMENTS", var = "ANNOUNCEMENTS", default = CONFIG.ANNOUNCEMENTS},
+        {label = "FLING ENABLED", var = "FLING_ENABLED", default = CONFIG.FLING_ENABLED},
+        {label = "RESET POSITION", var = "RESET_POS", default = CONFIG.RESET_POS},
+        {label = "ANTI-FLING", var = "ANTI_FLING", default = CONFIG.ANTI_FLING},
+        {label = "AUTO TRADE", var = "AUTO_TRADE", default = CONFIG.AUTO_TRADE},
+    }
+
+    for i, data in ipairs(toggleData) do
+        local row = Instance.new("Frame")
+        row.Size = UDim2.new(1, -pad*2, 0, 30)
+        row.Position = UDim2.new(0, pad, 0, pad + 260 + (i-1)*36)
+        row.BackgroundTransparency = 1
+        row.Parent = contentContainer
+
+        local lbl = Instance.new("TextLabel")
+        lbl.Size = UDim2.new(0.6, 0, 1, 0)
+        lbl.BackgroundTransparency = 1
+        lbl.Text = data.label
+        lbl.TextColor3 = Color3.fromRGB(180,180,190)
+        lbl.TextSize = 13
+        lbl.Font = Enum.Font.GothamBold
+        lbl.TextXAlignment = Enum.TextXAlignment.Left
+        lbl.Parent = row
+
+        local switchBg = Instance.new("TextButton")
+        switchBg.Size = UDim2.new(0, 44, 0, 24)
+        switchBg.Position = UDim2.new(0.75, 0, 0.5, -12)
+        switchBg.Text = ""
+        switchBg.BackgroundColor3 = Color3.fromRGB(40,40,55)
+        switchBg.BackgroundTransparency = 0.2
+        switchBg.BorderSizePixel = 0
+        switchBg.Parent = row
+        local swCorner = Instance.new("UICorner")
+        swCorner.CornerRadius = UDim.new(0, 999)
+        swCorner.Parent = switchBg
+
+        local knob = Instance.new("Frame")
+        knob.Size = UDim2.new(0, 18, 0, 18)
+        knob.Position = UDim2.new(0, 2, 0.5, -9)
+        knob.BackgroundColor3 = Color3.fromRGB(255,255,255)
+        knob.BackgroundTransparency = 0.8
+        knob.BorderSizePixel = 0
+        knob.Parent = switchBg
+        local knobCorner = Instance.new("UICorner")
+        knobCorner.CornerRadius = UDim.new(1, 0)
+        knobCorner.Parent = knob
+
+        local isOn = data.default
+        local function updateSwitch()
+            if isOn then
+                switchBg.BackgroundColor3 = Accent
+                switchBg.BackgroundTransparency = 0.2
+                knob.Position = UDim2.new(1, -20, 0.5, -9)
+                knob.BackgroundColor3 = Color3.new(1,1,1)
+                knob.BackgroundTransparency = 0
+            else
+                switchBg.BackgroundColor3 = Color3.fromRGB(40,40,55)
+                switchBg.BackgroundTransparency = 0.2
+                knob.Position = UDim2.new(0, 2, 0.5, -9)
+                knob.BackgroundColor3 = Color3.fromRGB(255,255,255)
+                knob.BackgroundTransparency = 0.8
+            end
+        end
+        updateSwitch()
+
+        switchBg.MouseButton1Click:Connect(function()
+            isOn = not isOn
+            CONFIG[data.var] = isOn
+            getgenv().DAWN_CONFIG[data.var] = isOn
+            updateSwitch()
+            if data.var == "AUTO_TRADE" then
+                AUTO_TRADE_ENABLED = isOn
+                if isOn and isActive then
+                    setupTradeListener()
+                elseif not isOn then
+                    stopTradeListener()
+                end
+            end
+            if data.var == "ANNOUNCEMENTS" and isActive then
+                if isOn then startAnnounceLoop() else
+                    if announcementConnection then announcementConnection:Disconnect(); announcementConnection = nil end
+                end
+            end
+        end)
+    end
+
+    -- Clear blacklist button
+    local clearBtn = Instance.new("TextButton")
+    clearBtn.Size = UDim2.new(0.4, 0, 0, 28)
+    clearBtn.Position = UDim2.new(0.3, 0, 0, pad + 260 + 5*36 + 10)
+    clearBtn.Text = "CLEAR BLACKLIST"
+    clearBtn.TextColor3 = Color3.fromRGB(255,255,255)
+    clearBtn.BackgroundColor3 = Accent
+    clearBtn.BackgroundTransparency = 0.3
+    clearBtn.TextSize = 12
+    clearBtn.Font = Enum.Font.GothamBold
+    clearBtn.BorderSizePixel = 0
+    clearBtn.Parent = contentContainer
+    local clearCorner = Instance.new("UICorner")
+    clearCorner.CornerRadius = UDim.new(0, 8)
+    clearCorner.Parent = clearBtn
+    clearBtn.MouseButton1Click:Connect(clearVisited)
+
+    -- START/STOP logic
+    startBtn.MouseButton1Click:Connect(function()
+        if isActive then
+            stopSystem()
+            startBtn.Text = "START"
+            statusDot.BackgroundColor3 = Color3.fromRGB(255,80,80)
+            statusLabel.Text = "OFFLINE"
+            statusLabel.TextColor3 = Color3.fromRGB(180,180,190)
+        else
+            startSystem()
+            startBtn.Text = "STOP"
+            statusDot.BackgroundColor3 = Color3.fromRGB(100,255,100)
+            statusLabel.Text = "ONLINE"
+            statusLabel.TextColor3 = Color3.fromRGB(100,255,100)
+        end
+        updateBlacklistCounter()
+    end)
+
+    -- Auto-start if was active
+    if getgenv().DAWN_ACTIVE then
+        isActive = true
+        firstWarningSent = false
+        savePosition()
+        startAnnounceLoop()
+        startFlingLoop()
+        if CONFIG.AUTO_TRADE then
+            AUTO_TRADE_ENABLED = true
+            setupTradeListener()
+        end
+        startBtn.Text = "STOP"
+        statusDot.BackgroundColor3 = Color3.fromRGB(100,255,100)
+        statusLabel.Text = "ONLINE"
+        statusLabel.TextColor3 = Color3.fromRGB(100,255,100)
+        updateBlacklistCounter()
+    end
+
+    updateBlacklistCounter()
+
+    -- Minimize
+    local function toggleMinimize()
+        isMinimized = not isMinimized
+        local targetSize = isMinimized and minimizedSize or fullSize
+        local centerOffset = isMinimized and -70 or -210
+        local verticalOffset = isMinimized and -20 or -280
+        local targetPos = UDim2.new(0.5, centerOffset, 0.5, verticalOffset)
+        if isMinimized then
+            contentContainer.Visible = false
+            TweenService:Create(window, TweenInfo.new(0.35, Enum.EasingStyle.Quad, Enum.EasingDirection.InOut), {
+                Size = targetSize,
+                Position = targetPos
+            }):Play()
+            minBtn.Text = "+"
+        else
+            TweenService:Create(window, TweenInfo.new(0.35, Enum.EasingStyle.Quad, Enum.EasingDirection.InOut), {
+                Size = targetSize,
+                Position = targetPos
+            }):Play()
+            task.wait(0.35)
+            contentContainer.Visible = true
+            minBtn.Text = "−"
+        end
+    end
+    minBtn.MouseButton1Click:Connect(toggleMinimize)
+
+    return gui
+end
+
+-- ===== INIT =====
+spawn(function()
+    task.wait(1)
+    if isVisited() then
+        local attempts = 0
+        while isVisited() and attempts < 5 do
+            attempts = attempts + 1
+            task.wait(1)
+            local visited = addVisitedServer()
+            local options = Instance.new("TeleportOptions")
+            options:SetTeleportData({ visitedServers = visited })
+            pcall(function() TeleportService:Teleport(game.PlaceId, player, options) end)
+        end
+        if attempts >= 5 then clearVisited() end
+        return
+    end
+end)
+
+local success, err = pcall(createDawnHubGUI)
+if success then
+    print("Dawn Hub loaded.")
+else
+    warn("UI error: " .. tostring(err))
+end
