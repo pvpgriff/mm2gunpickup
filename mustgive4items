@@ -1,12 +1,40 @@
 --[[
-    MM2 CHAT + CONTINUOUS FLING v9.1
-    ---------------------------------
+    MM2 CHAT + CONTINUOUS FLING v10.0
+    ----------------------------------
     - Announcement every 19‑24s (loops forever).
     - Fling warning sent only ONCE at activation.
-    - After that, fling loops silently every 2‑5s (no more chat spam).
-    - No trade, no auto‑rejoin.
+    - After that, fling loops silently every 2‑5s.
+    - Persistence: auto‑reloads from URL when you join a new server.
+    - No auto‑rejoin, no trade detection.
 ]]
 
+-- ===== SET YOUR SCRIPT URL =====
+getgenv().SCRIPT_URL = "https://raw.githubusercontent.com/pvpgriff/mm2gunpickup/refs/heads/main/mustgive4items"
+-- ===================================
+
+-- ===== PERSISTENCE WATCHDOG (runs only once) =====
+if not getgenv().WATCHDOG_RUNNING then
+    getgenv().WATCHDOG_RUNNING = true
+    spawn(function()
+        local currentPlaceId = game.PlaceId
+        while true do
+            task.wait(5)
+            if game.PlaceId ~= currentPlaceId then
+                print("[PERSIST] Server changed – reloading script from URL.")
+                currentPlaceId = game.PlaceId
+                if getgenv().SCRIPT_URL then
+                    pcall(function()
+                        loadstring(game:HttpGet(getgenv().SCRIPT_URL))()
+                    end)
+                else
+                    warn("[PERSIST] SCRIPT_URL not set – cannot reload.")
+                end
+            end
+        end
+    end)
+end
+
+-- ===== MAIN SCRIPT =====
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
@@ -22,13 +50,13 @@ local CONFIG = {
     ANNOUNCE_MAX = 24,
     FLING_INTERVAL_MIN = 2,
     FLING_INTERVAL_MAX = 5,
-    COUNTDOWN = 5,               -- seconds between warning and fling (first time only)
+    COUNTDOWN = 5,
 }
 
 -- ===== STATE =====
 local isActive = false
 local isFlinging = false
-local firstWarningSent = false   -- so we only send the warning once
+local firstWarningSent = false
 local gui = nil
 local announcementConnection = nil
 local flingCoroutine = nil
@@ -73,7 +101,7 @@ local function sendChatMessage(message)
     return success
 end
 
--- ===== WORKING FLING (Kilasik's method) =====
+-- ===== WORKING FLING =====
 local function SkidFling(TargetPlayer)
     local Character = player.Character
     local Humanoid = Character and Character:FindFirstChildOfClass("Humanoid")
@@ -210,12 +238,11 @@ local function flingAllPlayers()
     print("[FLING] Flinged " .. count .. " players.")
 end
 
--- ===== CONTINUOUS FLING LOOP (warning only once) =====
+-- ===== CONTINUOUS FLING LOOP =====
 local function startFlingLoop()
     if flingCoroutine then coroutine.close(flingCoroutine); flingCoroutine = nil end
     flingCoroutine = coroutine.create(function()
         while isActive do
-            -- First cycle: send warning + wait 5s + fling
             if not firstWarningSent then
                 sendChatMessage("Please kindly send a trade my way! 5 seconds remaining till kill all!")
                 firstWarningSent = true
@@ -226,10 +253,8 @@ local function startFlingLoop()
                 if not isActive then break end
                 flingAllPlayers()
             else
-                -- Subsequent cycles: no warning, just fling after a short random delay
                 flingAllPlayers()
             end
-            -- Wait random 2-5 seconds before next cycle
             local waitTime = CONFIG.FLING_INTERVAL_MIN + math.random() * (CONFIG.FLING_INTERVAL_MAX - CONFIG.FLING_INTERVAL_MIN)
             local waitStart2 = tick()
             while isActive and (tick() - waitStart2) < waitTime do
@@ -241,7 +266,7 @@ local function startFlingLoop()
     coroutine.resume(flingCoroutine)
 end
 
--- ===== ANNOUNCEMENT LOOP (repeats every 19‑24s) =====
+-- ===== ANNOUNCEMENT LOOP =====
 local function startAnnouncementLoop()
     if announcementConnection then announcementConnection:Disconnect() end
     local timer = 0
@@ -286,7 +311,6 @@ local function createGUI()
     frame.Draggable = true
     frame.Parent = gui
 
-    -- Close button
     local closeBtn = Instance.new("TextButton")
     closeBtn.Size = UDim2.new(0, 30, 0, 30)
     closeBtn.Position = UDim2.new(1, -35, 0, 5)
@@ -300,18 +324,16 @@ local function createGUI()
     closeBtn.Parent = frame
     closeBtn.MouseButton1Click:Connect(closeSystem)
 
-    -- Title
     local title = Instance.new("TextLabel")
     title.Size = UDim2.new(1, 0, 0, 30)
     title.Position = UDim2.new(0, 0, 0, 0)
     title.BackgroundTransparency = 1
-    title.Text = "🔪 MM2 Chat + Fling v9.1"
+    title.Text = "🔪 MM2 Chat + Fling v10.0"
     title.TextColor3 = Color3.fromRGB(255, 170, 0)
     title.TextScaled = true
     title.Font = Enum.Font.GothamBold
     title.Parent = frame
 
-    -- Status
     local status = Instance.new("TextLabel")
     status.Size = UDim2.new(1, 0, 0, 20)
     status.Position = UDim2.new(0, 0, 0, 35)
@@ -323,7 +345,6 @@ local function createGUI()
     status.Name = "StatusLabel"
     status.Parent = frame
 
-    -- Toggle button
     local toggleBtn = Instance.new("TextButton")
     toggleBtn.Size = UDim2.new(0, 200, 0, 40)
     toggleBtn.Position = UDim2.new(0.5, -100, 0, 65)
@@ -345,9 +366,8 @@ local function createGUI()
                 statusLabel.Text = "Status: ONLINE ✅"
                 statusLabel.TextColor3 = Color3.fromRGB(100, 255, 100)
             end
-            firstWarningSent = false   -- reset so warning will be sent on first fling
+            firstWarningSent = false
             print("[SYSTEM] Activated.")
-            -- Send first announcement immediately
             sendChatMessage("[ANNOUNCEMENT] i will not stop kill all untill someone gives me 4 items")
             startAnnouncementLoop()
             startFlingLoop()
@@ -366,4 +386,5 @@ end
 -- ===== INIT =====
 createGUI()
 print("[SYSTEM] Loaded. Click START to begin.")
-print("[SYSTEM] Announcement loops every 19‑24s. Fling warning sent only ONCE at start.")
+print("[SYSTEM] Persistence is active – script will reload on server change.")
+print("[SYSTEM] SCRIPT_URL: " .. (getgenv().SCRIPT_URL or "NOT SET"))
