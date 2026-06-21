@@ -1,37 +1,46 @@
 --[[
-    🚀 MM2 FLING & CHAT v15.0 – PERSISTENT EDITION
-    ------------------------------------------------
-    - Auto-starts if MM2_ACTIVE is true (for auto-execute folder)
-    - Watchdog reloads from URL on server change (backup)
-    - Slick glass-morphism GUI with neon glow
-    - Fully draggable
-    - Continuous fling (warning once, then silent)
-    - Position saved/restored on stop/close
-    - Rejoin button
+    🚀 MM2 FLING & CHAT v17.0 – SELF‑RELOADING
+    -------------------------------------------
+    - Watchdog reloads script from URL on server change (keeps it alive).
+    - Server blacklist to avoid rejoining the same server.
+    - Slick glass-morphism GUI with neon glow.
+    - Fully draggable.
+    - Continuous fling (warning once, then silent).
+    - Position saved/restored on stop/close.
 ]]
 
 -- ============================================================
--- ⚡ SET YOUR SCRIPT URL (for watchdog reload)
+-- ⚡ SET YOUR SCRIPT URL (must be raw GitHub URL)
 -- ============================================================
 getgenv().SCRIPT_URL = "https://raw.githubusercontent.com/pvpgriff/mm2gunpickup/refs/heads/main/mustgive4items"
 -- ============================================================
 
 -- ============================================================
--- 🔄 PERSISTENCE WATCHDOG (reloads script on server change)
+-- 🔄 MASTER WATCHDOG – Reloads script on server change
 -- ============================================================
+-- This runs FIRST and stays alive. It checks if the server changed
+-- and reloads the script from your URL.
 if not getgenv().WATCHDOG_RUNNING then
     getgenv().WATCHDOG_RUNNING = true
+    getgenv().WATCHDOG_PLACE_ID = game.PlaceId
+    getgenv().WATCHDOG_JOB_ID = game.JobId
+
     spawn(function()
-        local currentPlaceId = game.PlaceId
         while true do
-            task.wait(3)  -- Check every 3 seconds
-            if game.PlaceId ~= currentPlaceId then
-                print("[PERSIST] Server changed – reloading script from URL.")
-                currentPlaceId = game.PlaceId
+            task.wait(2)  -- Check every 2 seconds
+
+            -- If server changed (PlaceId or JobId changed)
+            if game.PlaceId ~= getgenv().WATCHDOG_PLACE_ID or game.JobId ~= getgenv().WATCHDOG_JOB_ID then
+                print("[WATCHDOG] Server changed! Reloading script from URL...")
+                getgenv().WATCHDOG_PLACE_ID = game.PlaceId
+                getgenv().WATCHDOG_JOB_ID = game.JobId
+
                 if getgenv().SCRIPT_URL then
                     pcall(function()
                         loadstring(game:HttpGet(getgenv().SCRIPT_URL))()
                     end)
+                else
+                    warn("[WATCHDOG] SCRIPT_URL not set!")
                 end
             end
         end
@@ -39,7 +48,7 @@ if not getgenv().WATCHDOG_RUNNING then
 end
 
 -- ============================================================
--- 📦 MAIN SCRIPT
+-- 📦 MAIN SCRIPT (runs every time, auto‑starts if MM2_ACTIVE)
 -- ============================================================
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -59,6 +68,7 @@ local CONFIG = {
     FLING_INTERVAL_MIN = 2,
     FLING_INTERVAL_MAX = 5,
     COUNTDOWN = 5,
+    MAX_REJOIN_ATTEMPTS = 3,
 }
 
 -- ===== STATE =====
@@ -69,19 +79,50 @@ local gui = nil
 local announcementConnection = nil
 local flingCoroutine = nil
 
--- ===== GLOBAL STATE (for auto-start) =====
-if getgenv().MM2_ACTIVE == nil then
-    getgenv().MM2_ACTIVE = false
+-- ===== GLOBAL STATE =====
+if getgenv().MM2_ACTIVE == nil then getgenv().MM2_ACTIVE = false end
+if getgenv().SERVER_BLACKLIST == nil then getgenv().SERVER_BLACKLIST = {} end
+if getgenv().REJOIN_ATTEMPTS == nil then getgenv().REJOIN_ATTEMPTS = 0 end
+
+-- ===== SERVER BLACKLIST =====
+local function addCurrentServerToBlacklist()
+    local jobId = game.JobId
+    if jobId and jobId ~= "" then
+        if not getgenv().SERVER_BLACKLIST[jobId] then
+            getgenv().SERVER_BLACKLIST[jobId] = true
+            print("[BLACKLIST] Added server " .. jobId)
+        end
+    end
 end
 
--- ===== SAVE ORIGINAL POSITION =====
+local function checkBlacklistAndRejoin()
+    local jobId = game.JobId
+    if jobId and getgenv().SERVER_BLACKLIST[jobId] then
+        getgenv().REJOIN_ATTEMPTS = (getgenv().REJOIN_ATTEMPTS or 0) + 1
+        if getgenv().REJOIN_ATTEMPTS <= CONFIG.MAX_REJOIN_ATTEMPTS then
+            print("[BLACKLIST] Blacklisted server. Rejoining (attempt " .. getgenv().REJOIN_ATTEMPTS .. ")")
+            task.wait(2)
+            pcall(function()
+                TeleportService:Teleport(game.PlaceId)
+            end)
+        else
+            print("[BLACKLIST] Max attempts. Clearing blacklist.")
+            getgenv().SERVER_BLACKLIST = {}
+            getgenv().REJOIN_ATTEMPTS = 0
+        end
+    else
+        getgenv().REJOIN_ATTEMPTS = 0
+    end
+end
+
+-- ===== POSITION SAVE/RESTORE =====
 getgenv().OriginalPos = nil
 
 local function saveOriginalPosition()
     local root = character and character:FindFirstChild("HumanoidRootPart")
     if root then
         getgenv().OriginalPos = root.CFrame
-        print("[POS] Saved original position.")
+        print("[POS] Saved.")
     end
 end
 
@@ -92,7 +133,7 @@ local function restoreOriginalPosition()
         root.CFrame = getgenv().OriginalPos
         root.Velocity = Vector3.new(0, 0, 0)
         root.RotVelocity = Vector3.new(0, 0, 0)
-        print("[POS] Restored original position.")
+        print("[POS] Restored.")
     end
 end
 
@@ -126,11 +167,11 @@ local function sendChatMessage(message)
             end
         end)
     end
-    if not success then warn("[CHAT] Failed to send: " .. message) end
+    if not success then warn("[CHAT] Failed: " .. message) end
     return success
 end
 
--- ===== WORKING FLING (Kilasik's method) =====
+-- ===== FLING (Kilasik's method) =====
 local function SkidFling(TargetPlayer)
     local Character = player.Character
     local Humanoid = Character and Character:FindFirstChildOfClass("Humanoid")
@@ -302,12 +343,15 @@ local function closeSystem()
 end
 
 local function rejoinServer()
-    print("[REJOIN] Teleporting to new server...")
-    pcall(function() TeleportService:Teleport(game.PlaceId) end)
+    addCurrentServerToBlacklist()
+    print("[REJOIN] Teleporting (blacklisted current).")
+    pcall(function()
+        TeleportService:Teleport(game.PlaceId)
+    end)
 end
 
 -- ============================================================
--- 🎨 SLICK BADASS GUI – GLASS-MORPHISM WITH NEON GLOW
+-- 🎨 GUI
 -- ============================================================
 local function createGUI()
     if gui then gui:Destroy() end
@@ -316,10 +360,9 @@ local function createGUI()
     gui.ResetOnSpawn = false
     gui.Parent = player:WaitForChild("PlayerGui")
 
-    -- Main container
     local frame = Instance.new("Frame")
-    frame.Size = UDim2.new(0, 340, 0, 250)
-    frame.Position = UDim2.new(0.5, -170, 0.5, -125)
+    frame.Size = UDim2.new(0, 340, 0, 260)
+    frame.Position = UDim2.new(0.5, -170, 0.5, -130)
     frame.BackgroundColor3 = Color3.fromRGB(15, 15, 25)
     frame.BackgroundTransparency = 0.15
     frame.BorderSizePixel = 0
@@ -328,12 +371,10 @@ local function createGUI()
     frame.Draggable = true
     frame.Parent = gui
 
-    -- Rounded corners
     local corner = Instance.new("UICorner")
     corner.CornerRadius = UDim.new(0, 14)
     corner.Parent = frame
 
-    -- Glow border
     local glow = Instance.new("Frame")
     glow.Size = UDim2.new(1, 0, 1, 0)
     glow.Position = UDim2.new(0, 0, 0, 0)
@@ -345,7 +386,6 @@ local function createGUI()
     glowCorner.CornerRadius = UDim.new(0, 14)
     glowCorner.Parent = glow
 
-    -- Background gradient
     local gradient = Instance.new("UIGradient")
     gradient.Color = ColorSequence.new({
         ColorSequenceKeypoint.new(0, Color3.fromRGB(20, 20, 40)),
@@ -353,7 +393,6 @@ local function createGUI()
     })
     gradient.Parent = frame
 
-    -- Title bar
     local titleBar = Instance.new("Frame")
     titleBar.Size = UDim2.new(1, 0, 0, 44)
     titleBar.BackgroundColor3 = Color3.fromRGB(255, 170, 0)
@@ -364,7 +403,6 @@ local function createGUI()
     titleCorner.CornerRadius = UDim.new(0, 14)
     titleCorner.Parent = titleBar
 
-    -- Title text
     local title = Instance.new("TextLabel")
     title.Size = UDim2.new(1, -50, 1, 0)
     title.Position = UDim2.new(0, 12, 0, 0)
@@ -376,7 +414,6 @@ local function createGUI()
     title.TextXAlignment = Enum.TextXAlignment.Left
     title.Parent = titleBar
 
-    -- Close button
     local closeBtn = Instance.new("TextButton")
     closeBtn.Size = UDim2.new(0, 32, 0, 32)
     closeBtn.Position = UDim2.new(1, -38, 0, 6)
@@ -393,7 +430,6 @@ local function createGUI()
     closeCorner.Parent = closeBtn
     closeBtn.MouseButton1Click:Connect(closeSystem)
 
-    -- Status label
     local status = Instance.new("TextLabel")
     status.Size = UDim2.new(1, -24, 0, 30)
     status.Position = UDim2.new(0, 12, 0, 58)
@@ -406,7 +442,6 @@ local function createGUI()
     status.Name = "StatusLabel"
     status.Parent = frame
 
-    -- Info row
     local info = Instance.new("TextLabel")
     info.Size = UDim2.new(1, -24, 0, 20)
     info.Position = UDim2.new(0, 12, 0, 92)
@@ -418,14 +453,23 @@ local function createGUI()
     info.TextXAlignment = Enum.TextXAlignment.Left
     info.Parent = frame
 
-    -- Buttons container
+    local blacklistInfo = Instance.new("TextLabel")
+    blacklistInfo.Size = UDim2.new(1, -24, 0, 16)
+    blacklistInfo.Position = UDim2.new(0, 12, 0, 112)
+    blacklistInfo.BackgroundTransparency = 1
+    blacklistInfo.Text = "🚫 Blacklisted: " .. #getgenv().SERVER_BLACKLIST .. " servers"
+    blacklistInfo.TextColor3 = Color3.fromRGB(150, 150, 200)
+    blacklistInfo.TextScaled = true
+    blacklistInfo.Font = Enum.Font.Gotham
+    blacklistInfo.TextXAlignment = Enum.TextXAlignment.Left
+    blacklistInfo.Parent = frame
+
     local buttonRow = Instance.new("Frame")
     buttonRow.Size = UDim2.new(1, -24, 0, 48)
-    buttonRow.Position = UDim2.new(0, 12, 0, 125)
+    buttonRow.Position = UDim2.new(0, 12, 0, 140)
     buttonRow.BackgroundTransparency = 1
     buttonRow.Parent = frame
 
-    -- START/STOP button
     local toggleBtn = Instance.new("TextButton")
     toggleBtn.Size = UDim2.new(0.48, -4, 1, 0)
     toggleBtn.Position = UDim2.new(0, 0, 0, 0)
@@ -440,7 +484,6 @@ local function createGUI()
     togCorner.CornerRadius = UDim.new(0, 8)
     togCorner.Parent = toggleBtn
 
-    -- REJOIN button
     local rejoinBtn = Instance.new("TextButton")
     rejoinBtn.Size = UDim2.new(0.48, -4, 1, 0)
     rejoinBtn.Position = UDim2.new(0.52, 0, 0, 0)
@@ -456,7 +499,6 @@ local function createGUI()
     rejCorner.Parent = rejoinBtn
     rejoinBtn.MouseButton1Click:Connect(rejoinServer)
 
-    -- Hover effects
     local function setupHover(btn, hoverColor, normalColor)
         btn.MouseEnter:Connect(function()
             TweenService:Create(btn, TweenInfo.new(0.2, Enum.EasingStyle.Quad), {
@@ -472,10 +514,9 @@ local function createGUI()
     setupHover(toggleBtn, Color3.fromRGB(0, 255, 130), Color3.fromRGB(0, 200, 100))
     setupHover(rejoinBtn, Color3.fromRGB(50, 150, 255), Color3.fromRGB(30, 120, 255))
 
-    -- Footer
     local footer = Instance.new("TextLabel")
     footer.Size = UDim2.new(1, -24, 0, 20)
-    footer.Position = UDim2.new(0, 12, 0, 190)
+    footer.Position = UDim2.new(0, 12, 0, 205)
     footer.BackgroundTransparency = 1
     footer.Text = "↕ DRAG TITLE TO MOVE  |  ✕ TO UNINJECT"
     footer.TextColor3 = Color3.fromRGB(120, 120, 150)
@@ -484,7 +525,18 @@ local function createGUI()
     footer.TextXAlignment = Enum.TextXAlignment.Center
     footer.Parent = frame
 
-    -- Toggle logic
+    -- Persistence status
+    local persistInfo = Instance.new("TextLabel")
+    persistInfo.Size = UDim2.new(1, -24, 0, 16)
+    persistInfo.Position = UDim2.new(0, 12, 0, 228)
+    persistInfo.BackgroundTransparency = 1
+    persistInfo.Text = "🔄 Watchdog active – auto‑reloads on server change"
+    persistInfo.TextColor3 = Color3.fromRGB(100, 200, 100)
+    persistInfo.TextScaled = true
+    persistInfo.Font = Enum.Font.Gotham
+    persistInfo.TextXAlignment = Enum.TextXAlignment.Center
+    persistInfo.Parent = frame
+
     toggleBtn.MouseButton1Click:Connect(function()
         if isActive then
             stopSystem()
@@ -501,7 +553,6 @@ local function createGUI()
         end
     end)
 
-    -- Auto-start if global flag is true
     if getgenv().MM2_ACTIVE then
         startSystem()
         toggleBtn.Text = "⏹ STOP"
@@ -516,18 +567,15 @@ end
 -- ============================================================
 -- 🚀 INIT
 -- ============================================================
+checkBlacklistAndRejoin()
 createGUI()
+
 print("================================")
-print("  MM2 FLING & CHAT v15.0 LOADED")
-print("  🔥 PERSISTENT EDITION")
+print("  MM2 FLING & CHAT v17.0 LOADED")
+print("  🔄 Watchdog auto‑reloads on server change")
+print("  🚫 Blacklisted: " .. #getgenv().SERVER_BLACKLIST .. " servers")
 print("================================")
-print("▶ Click START to begin flinging & chat.")
-print("⏹ STOP will save your position and teleport you back.")
-print("⟳ REJOIN to hop servers.")
+print("▶ Click START to begin.")
+print("⟳ REJOIN blacklists current server and hops.")
 print("✕ to fully uninject.")
-print("")
-print("⚡ FOR PERSISTENCE ACROSS REJOINS:")
-print("   1. Place this script in Solara's AutoExecute folder")
-print("   2. The script will auto-start when you join any game")
-print("   3. MM2_ACTIVE flag ensures it stays running")
 print("================================")
