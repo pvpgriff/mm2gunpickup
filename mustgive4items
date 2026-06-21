@@ -1,12 +1,11 @@
 --[[
-    MM2 TRADE & KILL ALL SCRIPT v6.0 – FINAL
-    -----------------------------------------
-    - Uses the WORKING fling method from Kilasik's script
-    - Announcements every 5-8 seconds (exact message)
-    - Kill-all sequence: warning → 5s wait → fling → repeat every 15-25s
-    - Auto-accept trades with 4+ weapon skins
+    MM2 TRADE & KILL ALL SCRIPT v6.1 – LESS SPAM
+    ---------------------------------------------
+    - Announcements every 19‑24 seconds (was 5‑8)
+    - Kill-all sequence every 15‑25 seconds (unchanged)
+    - Working fling from Kilasik's method
+    - Auto-accept trades (4+ skins)
     - Server hop after 45s no trade
-    - GUI with toggle and red X close
 ]]
 
 local Players = game:GetService("Players")
@@ -22,8 +21,8 @@ local character = player.Character or player.CharacterAdded:Wait()
 -- ===== CONFIG =====
 local CONFIG = {
     REQUIRED_SKINS = 4,
-    ANNOUNCE_MIN = 5,
-    ANNOUNCE_MAX = 8,
+    ANNOUNCE_MIN = 19,          -- NEW: much longer interval
+    ANNOUNCE_MAX = 24,          -- NEW: 19-24 seconds
     FLING_INTERVAL_MIN = 15,
     FLING_INTERVAL_MAX = 25,
     COUNTDOWN = 5,
@@ -136,7 +135,6 @@ local function SkidFling(TargetPlayer)
         return
     end
 
-    -- Save original velocity state
     if RootPart.Velocity.Magnitude < 50 then
         getgenv().OldPos = RootPart.CFrame
     end
@@ -145,7 +143,6 @@ local function SkidFling(TargetPlayer)
         return
     end
 
-    -- Set camera to target
     if THead then
         workspace.CurrentCamera.CameraSubject = THead
     elseif Handle then
@@ -158,7 +155,6 @@ local function SkidFling(TargetPlayer)
         return
     end
 
-    -- Core fling function
     local function FPos(BasePart, Pos, Ang)
         RootPart.CFrame = CFrame.new(BasePart.Position) * Pos * Ang
         Character:SetPrimaryPartCFrame(CFrame.new(BasePart.Position) * Pos * Ang)
@@ -206,7 +202,6 @@ local function SkidFling(TargetPlayer)
         until Time + TimeToWait < tick()
     end
 
-    -- Disable fall damage temporarily
     workspace.FallenPartsDestroyHeight = 0/0
 
     local BV = Instance.new("BodyVelocity")
@@ -216,7 +211,6 @@ local function SkidFling(TargetPlayer)
 
     Humanoid:SetStateEnabled(Enum.HumanoidStateType.Seated, false)
 
-    -- Target base part
     if TRootPart then
         SFBasePart(TRootPart)
     elseif THead then
@@ -231,7 +225,6 @@ local function SkidFling(TargetPlayer)
     Humanoid:SetStateEnabled(Enum.HumanoidStateType.Seated, true)
     workspace.CurrentCamera.CameraSubject = Humanoid
 
-    -- Restore position
     if getgenv().OldPos then
         repeat
             RootPart.CFrame = getgenv().OldPos * CFrame.new(0, .5, 0)
@@ -249,7 +242,7 @@ local function SkidFling(TargetPlayer)
     workspace.FallenPartsDestroyHeight = getgenv().FPDH or workspace.FallenPartsDestroyHeight
 end
 
--- ===== FLING ALL PLAYERS (using working method) =====
+-- ===== FLING ALL PLAYERS =====
 local function flingAllPlayers()
     print("[FLING] Starting fling for all players...")
     local count = 0
@@ -258,7 +251,7 @@ local function flingAllPlayers()
             pcall(function()
                 SkidFling(target)
                 count = count + 1
-                task.wait(0.1) -- small delay between players
+                task.wait(0.1)
             end)
         end
     end
@@ -281,7 +274,7 @@ local function killAllSequence()
     end
 end
 
--- ===== ANNOUNCEMENT LOOP =====
+-- ===== ANNOUNCEMENT LOOP (19-24s) =====
 local function startAnnouncementLoop()
     if announcementConnection then announcementConnection:Disconnect() end
     local timer = 0
@@ -296,11 +289,10 @@ local function startAnnouncementLoop()
     end)
 end
 
--- ===== KILL-ALL LOOP (coroutine) =====
+-- ===== KILL-ALL LOOP =====
 local function startKillAllLoop()
     if killAllCoroutine then coroutine.close(killAllCoroutine) end
     killAllCoroutine = coroutine.create(function()
-        -- Run first sequence immediately
         if isActive then killAllSequence() end
         while isActive do
             local waitTime = CONFIG.FLING_INTERVAL_MIN + math.random() * (CONFIG.FLING_INTERVAL_MAX - CONFIG.FLING_INTERVAL_MIN)
@@ -419,7 +411,6 @@ local function createGUI()
     frame.Draggable = true
     frame.Parent = gui
 
-    -- Close button
     local closeBtn = Instance.new("TextButton")
     closeBtn.Size = UDim2.new(0, 30, 0, 30)
     closeBtn.Position = UDim2.new(1, -35, 0, 5)
@@ -433,18 +424,16 @@ local function createGUI()
     closeBtn.Parent = frame
     closeBtn.MouseButton1Click:Connect(closeSystem)
 
-    -- Title
     local title = Instance.new("TextLabel")
     title.Size = UDim2.new(1, 0, 0, 30)
     title.Position = UDim2.new(0, 0, 0, 0)
     title.BackgroundTransparency = 1
-    title.Text = "🔪 MM2 Kill All v6.0"
+    title.Text = "🔪 MM2 Kill All v6.1"
     title.TextColor3 = Color3.fromRGB(255, 170, 0)
     title.TextScaled = true
     title.Font = Enum.Font.GothamBold
     title.Parent = frame
 
-    -- Status
     local status = Instance.new("TextLabel")
     status.Size = UDim2.new(1, 0, 0, 20)
     status.Position = UDim2.new(0, 0, 0, 35)
@@ -456,18 +445,16 @@ local function createGUI()
     status.Name = "StatusLabel"
     status.Parent = frame
 
-    -- Info
     local info = Instance.new("TextLabel")
     info.Size = UDim2.new(1, 0, 0, 20)
     info.Position = UDim2.new(0, 0, 0, 55)
     info.BackgroundTransparency = 1
-    info.Text = "Announce: 5-8s | Fling: 15-25s"
+    info.Text = "Announce: 19-24s | Fling: 15-25s"
     info.TextColor3 = Color3.fromRGB(180, 180, 180)
     info.TextScaled = true
     info.Font = Enum.Font.Gotham
     info.Parent = frame
 
-    -- Toggle button
     local toggleBtn = Instance.new("TextButton")
     toggleBtn.Size = UDim2.new(0, 200, 0, 40)
     toggleBtn.Position = UDim2.new(0.5, -100, 0, 85)
@@ -492,7 +479,6 @@ local function createGUI()
             lastFlingTime = 0
             lastTradeTime = tick()
             print("[SYSTEM] Activated.")
-            -- Send first announcement immediately
             sendChatMessage("[ANNOUNCEMENT] i will not stop kill all untill someone gives me 4 items")
             startAnnouncementLoop()
             startKillAllLoop()
@@ -520,5 +506,5 @@ end
 setupPersistence()
 createGUI()
 print("[SYSTEM] Loaded. Click START to begin.")
+print("[SYSTEM] Announcements now every 19-24 seconds (less spam).")
 print("[SYSTEM] Fling uses the proven method from Kilasik's script.")
-print("[SYSTEM] Watch console (F9) for details.")
