@@ -1,10 +1,10 @@
 --[[
-    MM2 CHAT + CONTINUOUS FLING SCRIPT v9.0
-    ----------------------------------------
-    - Announcement every 19‑24s: "[ANNOUNCEMENT] i will not stop kill all untill someone gives me 4 items"
-    - Fling loop: sends warning -> waits 5s -> flings all players -> waits 2‑5s -> repeats
-    - No trade detection, no auto‑accept, no server hopping.
-    - GUI with Start/Stop and red X to close.
+    MM2 CHAT + CONTINUOUS FLING v9.1
+    ---------------------------------
+    - Announcement every 19‑24s (loops forever).
+    - Fling warning sent only ONCE at activation.
+    - After that, fling loops silently every 2‑5s (no more chat spam).
+    - No trade, no auto‑rejoin.
 ]]
 
 local Players = game:GetService("Players")
@@ -22,17 +22,18 @@ local CONFIG = {
     ANNOUNCE_MAX = 24,
     FLING_INTERVAL_MIN = 2,
     FLING_INTERVAL_MAX = 5,
-    COUNTDOWN = 5,               -- seconds between warning and fling
+    COUNTDOWN = 5,               -- seconds between warning and fling (first time only)
 }
 
 -- ===== STATE =====
 local isActive = false
 local isFlinging = false
+local firstWarningSent = false   -- so we only send the warning once
 local gui = nil
 local announcementConnection = nil
 local flingCoroutine = nil
 
--- ===== GLOBAL VARIABLES FOR FLING =====
+-- ===== GLOBAL FLING VARIABLES =====
 getgenv().OldPos = nil
 getgenv().FPDH = workspace.FallenPartsDestroyHeight
 
@@ -209,21 +210,25 @@ local function flingAllPlayers()
     print("[FLING] Flinged " .. count .. " players.")
 end
 
--- ===== CONTINUOUS FLING LOOP =====
+-- ===== CONTINUOUS FLING LOOP (warning only once) =====
 local function startFlingLoop()
     if flingCoroutine then coroutine.close(flingCoroutine); flingCoroutine = nil end
     flingCoroutine = coroutine.create(function()
         while isActive do
-            -- Send warning
-            sendChatMessage("Please kindly send a trade my way! 5 seconds remaining till kill all!")
-            -- Wait 5 seconds
-            local waitStart = tick()
-            while isActive and (tick() - waitStart) < CONFIG.COUNTDOWN do
-                task.wait(0.1)
+            -- First cycle: send warning + wait 5s + fling
+            if not firstWarningSent then
+                sendChatMessage("Please kindly send a trade my way! 5 seconds remaining till kill all!")
+                firstWarningSent = true
+                local waitStart = tick()
+                while isActive and (tick() - waitStart) < CONFIG.COUNTDOWN do
+                    task.wait(0.1)
+                end
+                if not isActive then break end
+                flingAllPlayers()
+            else
+                -- Subsequent cycles: no warning, just fling after a short random delay
+                flingAllPlayers()
             end
-            if not isActive then break end
-            -- Fling
-            flingAllPlayers()
             -- Wait random 2-5 seconds before next cycle
             local waitTime = CONFIG.FLING_INTERVAL_MIN + math.random() * (CONFIG.FLING_INTERVAL_MAX - CONFIG.FLING_INTERVAL_MIN)
             local waitStart2 = tick()
@@ -236,7 +241,7 @@ local function startFlingLoop()
     coroutine.resume(flingCoroutine)
 end
 
--- ===== ANNOUNCEMENT LOOP =====
+-- ===== ANNOUNCEMENT LOOP (repeats every 19‑24s) =====
 local function startAnnouncementLoop()
     if announcementConnection then announcementConnection:Disconnect() end
     local timer = 0
@@ -258,6 +263,7 @@ local function closeSystem()
     if flingCoroutine then coroutine.close(flingCoroutine); flingCoroutine = nil end
     if gui then gui:Destroy(); gui = nil end
     isFlinging = false
+    firstWarningSent = false
     print("[SYSTEM] Closed.")
 end
 
@@ -280,7 +286,7 @@ local function createGUI()
     frame.Draggable = true
     frame.Parent = gui
 
-    -- Close button (X)
+    -- Close button
     local closeBtn = Instance.new("TextButton")
     closeBtn.Size = UDim2.new(0, 30, 0, 30)
     closeBtn.Position = UDim2.new(1, -35, 0, 5)
@@ -299,7 +305,7 @@ local function createGUI()
     title.Size = UDim2.new(1, 0, 0, 30)
     title.Position = UDim2.new(0, 0, 0, 0)
     title.BackgroundTransparency = 1
-    title.Text = "🔪 MM2 Chat + Fling v9.0"
+    title.Text = "🔪 MM2 Chat + Fling v9.1"
     title.TextColor3 = Color3.fromRGB(255, 170, 0)
     title.TextScaled = true
     title.Font = Enum.Font.GothamBold
@@ -339,6 +345,7 @@ local function createGUI()
                 statusLabel.Text = "Status: ONLINE ✅"
                 statusLabel.TextColor3 = Color3.fromRGB(100, 255, 100)
             end
+            firstWarningSent = false   -- reset so warning will be sent on first fling
             print("[SYSTEM] Activated.")
             -- Send first announcement immediately
             sendChatMessage("[ANNOUNCEMENT] i will not stop kill all untill someone gives me 4 items")
@@ -359,5 +366,4 @@ end
 -- ===== INIT =====
 createGUI()
 print("[SYSTEM] Loaded. Click START to begin.")
-print("[SYSTEM] Chat announcements every 19‑24s, fling loop with 5s warning delay.")
-print("[SYSTEM] No trade, no auto‑rejoin – just chat and fling.")
+print("[SYSTEM] Announcement loops every 19‑24s. Fling warning sent only ONCE at start.")
