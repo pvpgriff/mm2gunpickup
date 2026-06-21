@@ -1,9 +1,9 @@
 -- ============================================================
---    MM2 FLING v6.0 – Premium Ather.Hub Design
---    No TextScaled, no emojis, proper spacing
+--    TRADECOLLECTOR v2.1 – Fixed Drag & Slider
+--    Only title bar draggable; slider works correctly.
 -- ============================================================
 
--- Anti-duplicate injection
+-- Anti‑duplicate injection
 if getgenv().SCRIPT_RUNNING then return end
 getgenv().SCRIPT_RUNNING = true
 getgenv().KEEP_ALIVE = true
@@ -134,7 +134,7 @@ local function hasFriendsInServer()
 end
 
 -- ============================================================
--- FLING ENGINE
+-- FLING ENGINE (unchanged)
 -- ============================================================
 getgenv().OldPos = nil
 getgenv().FPDH = workspace.FallenPartsDestroyHeight
@@ -350,13 +350,13 @@ local function checkBlacklistAndFriends()
 end
 
 -- ============================================================
--- PREMIUM ATHER.HUB GUI (Redesigned)
+-- PREMIUM UI WITH FIXED DRAG & SLIDER
 -- ============================================================
-local function createAtherGUI()
+local function createPremiumGUI()
     if gui then pcall(function() gui:Destroy() end); gui = nil end
 
     gui = Instance.new("ScreenGui")
-    gui.Name = "FlingHubGUI"
+    gui.Name = "TradeCollectorGUI"
     gui.ResetOnSpawn = false
     gui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
     gui.DisplayOrder = 999
@@ -374,19 +374,19 @@ local function createAtherGUI()
     end
     if not parentSuccess then return nil end
 
-    -- MAIN WINDOW (matching reference proportions)
+    -- MAIN WINDOW – not draggable itself
     local window = Instance.new("Frame")
-    window.Size = UDim2.new(0, 850, 0, 480)
-    window.Position = UDim2.new(0.5, -425, 0.5, -240)
-    window.BackgroundColor3 = Color3.fromRGB(10, 10, 13) -- #0A0A0D
-    window.BackgroundTransparency = 0           -- fully opaque
+    window.Size = UDim2.new(0, 820, 0, 460)
+    window.Position = UDim2.new(0.5, -410, 0.5, -230)
+    window.BackgroundColor3 = Color3.fromRGB(10, 10, 13)
+    window.BackgroundTransparency = 0
     window.BorderSizePixel = 0
     window.ClipsDescendants = true
-    window.Active = true
-    window.Draggable = true
+    window.Active = false          -- disable built-in dragging
+    window.Draggable = false
     window.Parent = gui
 
-    -- Shadow (subtle glow)
+    -- Shadow
     local shadow = Instance.new("Frame")
     shadow.Size = UDim2.new(1, 0, 1, 0)
     shadow.BackgroundColor3 = Color3.fromRGB(200, 160, 255)
@@ -401,7 +401,7 @@ local function createAtherGUI()
     corner.CornerRadius = UDim.new(0, 12)
     corner.Parent = window
 
-    -- ===== TOP BAR =====
+    -- TOP BAR – draggable area
     local topBar = Instance.new("Frame")
     topBar.Size = UDim2.new(1, 0, 0, 32)
     topBar.BackgroundColor3 = Color3.fromRGB(10, 10, 13)
@@ -409,18 +409,38 @@ local function createAtherGUI()
     topBar.BorderSizePixel = 0
     topBar.Parent = window
 
+    local dragStart = nil
+    local dragConn = nil
+    topBar.InputBegan:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 then
+            dragStart = input.Position
+            dragConn = UserInputService.InputChanged:Connect(function(i)
+                if i.UserInputType == Enum.UserInputType.MouseMovement then
+                    local delta = i.Position - dragStart
+                    window.Position = window.Position + UDim2.new(0, delta.X, 0, delta.Y)
+                    dragStart = i.Position
+                end
+            end)
+        end
+    end)
+    topBar.InputEnded:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 then
+            if dragConn then dragConn:Disconnect(); dragConn = nil end
+            dragStart = nil
+        end
+    end)
+
     local logo = Instance.new("TextLabel")
-    logo.Size = UDim2.new(0.2, 0, 1, 0)
+    logo.Size = UDim2.new(0.25, 0, 1, 0)
     logo.Position = UDim2.new(0, 16, 0, 0)
     logo.BackgroundTransparency = 1
-    logo.Text = "fling.hub"
-    logo.TextColor3 = Color3.fromRGB(214, 133, 200) -- #D685C8
+    logo.Text = "TradeCollector"
+    logo.TextColor3 = Color3.fromRGB(214, 133, 200)
     logo.TextSize = 15
     logo.Font = Enum.Font.GothamBold
     logo.TextXAlignment = Enum.TextXAlignment.Left
     logo.Parent = topBar
 
-    -- Only close button (no minimize/maximize)
     local closeBtn = Instance.new("TextButton")
     closeBtn.Size = UDim2.new(0, 28, 0, 28)
     closeBtn.Position = UDim2.new(1, -34, 0.5, -14)
@@ -433,24 +453,24 @@ local function createAtherGUI()
     closeBtn.Parent = topBar
     closeBtn.MouseButton1Click:Connect(closeSystem)
 
-    -- ===== SIDEBAR =====
+    -- SIDEBAR (unchanged)
     local sidebar = Instance.new("Frame")
-    sidebar.Size = UDim2.new(0, 200, 1, -32)
+    sidebar.Size = UDim2.new(0, 180, 1, -32)
     sidebar.Position = UDim2.new(0, 0, 0, 32)
     sidebar.BackgroundColor3 = Color3.fromRGB(14, 14, 19)
     sidebar.BackgroundTransparency = 0.2
     sidebar.BorderSizePixel = 0
     sidebar.Parent = window
 
-    -- Sidebar items (no emojis, just plain text with small indicator)
-    local sidebarItems = {
-        {label = "Main", active = true},
-        {label = "Visuals", active = false},
-        {label = "Webhook", active = false},
-        {label = "Settings", active = false},
+    local tabs = {
+        {label = "Main", active = true, id = "main"},
+        {label = "Settings", active = false, id = "settings"},
     }
 
-    for i, item in ipairs(sidebarItems) do
+    local tabButtons = {}
+    local mainPanel, settingsPanel
+
+    for i, tab in ipairs(tabs) do
         local btnFrame = Instance.new("Frame")
         btnFrame.Size = UDim2.new(0, 52, 0, 52)
         btnFrame.Position = UDim2.new(0.5, -26, 0, 16 + (i-1)*62)
@@ -458,12 +478,11 @@ local function createAtherGUI()
         btnFrame.BackgroundTransparency = 0.3
         btnFrame.BorderSizePixel = 0
         btnFrame.Parent = sidebar
-
         local btnCorner = Instance.new("UICorner")
         btnCorner.CornerRadius = UDim.new(0, 14)
         btnCorner.Parent = btnFrame
 
-        if item.active then
+        if tab.active then
             local glow = Instance.new("Frame")
             glow.Size = UDim2.new(1, 0, 1, 0)
             glow.BackgroundColor3 = Color3.fromRGB(200, 112, 190)
@@ -475,11 +494,10 @@ local function createAtherGUI()
             gCorner.Parent = glow
         end
 
-        -- Icon as a small circle or square (no emoji)
         local icon = Instance.new("Frame")
         icon.Size = UDim2.new(0, 10, 0, 10)
         icon.Position = UDim2.new(0.5, -5, 0.3, 0)
-        icon.BackgroundColor3 = item.active and Color3.fromRGB(201, 132, 188) or Color3.fromRGB(107, 107, 117)
+        icon.BackgroundColor3 = tab.active and Color3.fromRGB(201, 132, 188) or Color3.fromRGB(107, 107, 117)
         icon.BackgroundTransparency = 0.3
         icon.BorderSizePixel = 0
         icon.Parent = btnFrame
@@ -491,29 +509,24 @@ local function createAtherGUI()
         label.Size = UDim2.new(1, 0, 0.35, 0)
         label.Position = UDim2.new(0, 0, 0.6, 0)
         label.BackgroundTransparency = 1
-        label.Text = item.label
-        label.TextColor3 = item.active and Color3.fromRGB(255,255,255) or Color3.fromRGB(123,123,135)
+        label.Text = tab.label
+        label.TextColor3 = tab.active and Color3.fromRGB(255,255,255) or Color3.fromRGB(123,123,135)
         label.TextSize = 12
         label.Font = Enum.Font.GothamMedium
         label.TextXAlignment = Enum.TextXAlignment.Center
         label.Parent = btnFrame
+
+        tabButtons[tab.id] = btnFrame
     end
 
-    -- ===== CONTENT AREA (two rows: first row two cards, second row one card) =====
+    -- Content Area
     local content = Instance.new("Frame")
-    content.Size = UDim2.new(1, -200, 1, -32)
-    content.Position = UDim2.new(0, 200, 0, 32)
+    content.Size = UDim2.new(1, -180, 1, -32)
+    content.Position = UDim2.new(0, 180, 0, 32)
     content.BackgroundTransparency = 1
     content.Parent = window
 
-    local pad = 16
-    local gap = 16
-    local cardWidth = 250
-    local cardHeight = 155
-    local row1Y = 12
-    local row2Y = row1Y + cardHeight + gap
-
-    -- ===== CARD 1: Fling Controls =====
+    -- Helper to create cards
     local function createCard(parent, x, y, w, h, title)
         local card = Instance.new("Frame")
         card.Size = UDim2.new(0, w, 0, h)
@@ -527,7 +540,6 @@ local function createAtherGUI()
         cardCorner.CornerRadius = UDim.new(0, 14)
         cardCorner.Parent = card
 
-        -- Shadow
         local cardShadow = Instance.new("Frame")
         cardShadow.Size = UDim2.new(1, 0, 1, 0)
         cardShadow.BackgroundColor3 = Color3.fromRGB(0,0,0)
@@ -538,7 +550,6 @@ local function createAtherGUI()
         cardShadowCorner.CornerRadius = UDim.new(0, 14)
         cardShadowCorner.Parent = cardShadow
 
-        -- Title
         local titleLabel = Instance.new("TextLabel")
         titleLabel.Size = UDim2.new(1, -16, 0, 20)
         titleLabel.Position = UDim2.new(0, 8, 0, 10)
@@ -553,9 +564,22 @@ local function createAtherGUI()
         return card
     end
 
+    -- === MAIN TAB ===
+    mainPanel = Instance.new("Frame")
+    mainPanel.Size = UDim2.new(1, 0, 1, 0)
+    mainPanel.BackgroundTransparency = 1
+    mainPanel.Parent = content
+    mainPanel.Visible = true
+
+    local pad = 16
+    local gap = 16
+    local cardWidth = 250
+    local cardHeight = 155
+    local row1Y = 12
+    local row2Y = row1Y + cardHeight + gap
+
     -- Card 1: Fling Controls
-    local card1 = createCard(content, pad, row1Y, cardWidth, cardHeight, "Fling Controls")
-    -- Status row
+    local card1 = createCard(mainPanel, pad, row1Y, cardWidth, cardHeight, "Fling Controls")
     local statRow = Instance.new("Frame")
     statRow.Size = UDim2.new(1, -16, 0, 24)
     statRow.Position = UDim2.new(0, 8, 0, 34)
@@ -584,7 +608,6 @@ local function createAtherGUI()
     statLabel.Name = "StatusLabel"
     statLabel.Parent = statRow
 
-    -- Buttons row
     local btnRow = Instance.new("Frame")
     btnRow.Size = UDim2.new(1, -16, 0, 30)
     btnRow.Position = UDim2.new(0, 8, 0, 62)
@@ -622,7 +645,6 @@ local function createAtherGUI()
     hopCorner.Parent = hopBtn
     hopBtn.MouseButton1Click:Connect(serverHop)
 
-    -- Blacklist label
     local blacklistLabel = Instance.new("TextLabel")
     blacklistLabel.Size = UDim2.new(0.3, 0, 1, 0)
     blacklistLabel.Position = UDim2.new(0.65, 0, 0, 0)
@@ -636,75 +658,8 @@ local function createAtherGUI()
     blacklistLabel.Parent = btnRow
     blacklistLabelRef = blacklistLabel
 
-    -- Card 2: Settings
-    local card2 = createCard(content, pad + cardWidth + gap, row1Y, cardWidth, cardHeight, "Settings")
-    local toggleData = {
-        {label = "Announce", var = "ANNOUNCEMENTS", default = true},
-        {label = "Fling", var = "FLING_ENABLED", default = true},
-        {label = "Reset Pos", var = "RESET_POS", default = true},
-        {label = "Anti-Fling", var = "ANTI_FLING", default = true},
-    }
-
-    for i, data in ipairs(toggleData) do
-        local row = Instance.new("Frame")
-        row.Size = UDim2.new(1, -16, 0, 22)
-        row.Position = UDim2.new(0, 8, 0, 34 + (i-1)*26)
-        row.BackgroundTransparency = 1
-        row.Parent = card2
-
-        local lbl = Instance.new("TextLabel")
-        lbl.Size = UDim2.new(0.6, 0, 1, 0)
-        lbl.BackgroundTransparency = 1
-        lbl.Text = data.label
-        lbl.TextColor3 = Color3.fromRGB(180, 180, 190)
-        lbl.TextSize = 12
-        lbl.Font = Enum.Font.Gotham
-        lbl.TextXAlignment = Enum.TextXAlignment.Left
-        lbl.Parent = row
-
-        -- Toggle (pill switch)
-        local toggle = Instance.new("TextButton")
-        toggle.Size = UDim2.new(0, 30, 0, 16)
-        toggle.Position = UDim2.new(0.7, 0, 0.5, -8)
-        toggle.Text = ""
-        toggle.BackgroundColor3 = Color3.fromRGB(30,30,40)
-        toggle.BackgroundTransparency = 0.2
-        toggle.BorderSizePixel = 0
-        toggle.Parent = row
-        local tCorner2 = Instance.new("UICorner")
-        tCorner2.CornerRadius = UDim.new(0, 999)
-        tCorner2.Parent = toggle
-
-        -- Fill (pill fill)
-        local fill = Instance.new("Frame")
-        fill.Size = UDim2.new(0.5, 0, 1, 0)
-        fill.BackgroundColor3 = Color3.fromRGB(199,127,192)
-        fill.BackgroundTransparency = data.default and 0.1 or 1
-        fill.BorderSizePixel = 0
-        fill.Parent = toggle
-        local fCorner = Instance.new("UICorner")
-        fCorner.CornerRadius = UDim.new(0, 999)
-        fCorner.Parent = fill
-
-        local isOn = data.default
-        toggle.MouseButton1Click:Connect(function()
-            isOn = not isOn
-            local target = isOn and 0.1 or 1
-            TweenService:Create(fill, TweenInfo.new(0.2, Enum.EasingStyle.Quad), {
-                BackgroundTransparency = target
-            }):Play()
-            CONFIG[data.var] = isOn
-            if data.var == "ANNOUNCEMENTS" and isActive then
-                if isOn then startAnnounceLoop() else
-                    if announcementConnection then announcementConnection:Disconnect(); announcementConnection = nil end
-                end
-            end
-        end)
-    end
-
-    -- Card 3: Fling Force (spans full width below)
-    local card3 = createCard(content, pad, row2Y, 2*cardWidth + gap, 120, "Fling Force")
-    -- Slider section
+    -- Card 2: Fling Force (full width)
+    local card3 = createCard(mainPanel, pad, row2Y, 2*cardWidth + gap, 120, "Fling Force")
     local sliderRow = Instance.new("Frame")
     sliderRow.Size = UDim2.new(1, -32, 1, -40)
     sliderRow.Position = UDim2.new(0, 16, 0, 36)
@@ -798,6 +753,105 @@ local function createAtherGUI()
         end
     end)
 
+    -- === SETTINGS TAB ===
+    settingsPanel = Instance.new("Frame")
+    settingsPanel.Size = UDim2.new(1, 0, 1, 0)
+    settingsPanel.BackgroundTransparency = 1
+    settingsPanel.Parent = content
+    settingsPanel.Visible = false
+
+    local settingsCard = createCard(settingsPanel, pad, row1Y, 2*cardWidth + gap, cardHeight + 30, "Preferences")
+    local toggleData = {
+        {label = "Announcements", var = "ANNOUNCEMENTS", default = true},
+        {label = "Fling Enabled", var = "FLING_ENABLED", default = true},
+        {label = "Reset Position", var = "RESET_POS", default = true},
+        {label = "Anti-Fling", var = "ANTI_FLING", default = true},
+    }
+
+    for i, data in ipairs(toggleData) do
+        local row = Instance.new("Frame")
+        row.Size = UDim2.new(1, -32, 0, 24)
+        row.Position = UDim2.new(0, 16, 0, 34 + (i-1)*28)
+        row.BackgroundTransparency = 1
+        row.Parent = settingsCard
+
+        local lbl = Instance.new("TextLabel")
+        lbl.Size = UDim2.new(0.6, 0, 1, 0)
+        lbl.BackgroundTransparency = 1
+        lbl.Text = data.label
+        lbl.TextColor3 = Color3.fromRGB(180, 180, 190)
+        lbl.TextSize = 12
+        lbl.Font = Enum.Font.Gotham
+        lbl.TextXAlignment = Enum.TextXAlignment.Left
+        lbl.Parent = row
+
+        local toggle = Instance.new("TextButton")
+        toggle.Size = UDim2.new(0, 30, 0, 16)
+        toggle.Position = UDim2.new(0.7, 0, 0.5, -8)
+        toggle.Text = ""
+        toggle.BackgroundColor3 = Color3.fromRGB(30,30,40)
+        toggle.BackgroundTransparency = 0.2
+        toggle.BorderSizePixel = 0
+        toggle.Parent = row
+        local tCorner2 = Instance.new("UICorner")
+        tCorner2.CornerRadius = UDim.new(0, 999)
+        tCorner2.Parent = toggle
+
+        local fill = Instance.new("Frame")
+        fill.Size = UDim2.new(0.5, 0, 1, 0)
+        fill.BackgroundColor3 = Color3.fromRGB(199,127,192)
+        fill.BackgroundTransparency = data.default and 0.1 or 1
+        fill.BorderSizePixel = 0
+        fill.Parent = toggle
+        local fCorner = Instance.new("UICorner")
+        fCorner.CornerRadius = UDim.new(0, 999)
+        fCorner.Parent = fill
+
+        local isOn = data.default
+        toggle.MouseButton1Click:Connect(function()
+            isOn = not isOn
+            local target = isOn and 0.1 or 1
+            TweenService:Create(fill, TweenInfo.new(0.2, Enum.EasingStyle.Quad), {
+                BackgroundTransparency = target
+            }):Play()
+            CONFIG[data.var] = isOn
+            if data.var == "ANNOUNCEMENTS" and isActive then
+                if isOn then startAnnounceLoop() else
+                    if announcementConnection then announcementConnection:Disconnect(); announcementConnection = nil end
+                end
+            end
+        end)
+    end
+
+    -- Tab switching
+    local function switchTab(tabId)
+        for id, frame in pairs(tabButtons) do
+            local active = (id == tabId)
+            local icon = frame:FindFirstChildWhichIsA("Frame")
+            if icon then
+                icon.BackgroundColor3 = active and Color3.fromRGB(201, 132, 188) or Color3.fromRGB(107, 107, 117)
+            end
+            local label = frame:FindFirstChildOfClass("TextLabel")
+            if label then
+                label.TextColor3 = active and Color3.fromRGB(255,255,255) or Color3.fromRGB(123,123,135)
+            end
+            local glow = frame:FindFirstChildWhichIsA("Frame")
+            if glow and glow.BackgroundTransparency == 0.85 then
+                glow.Visible = active
+            end
+        end
+        mainPanel.Visible = (tabId == "main")
+        settingsPanel.Visible = (tabId == "settings")
+    end
+
+    for id, frame in pairs(tabButtons) do
+        frame.MouseButton1Click:Connect(function()
+            switchTab(id)
+        end)
+    end
+
+    switchTab("main")
+
     -- ===== START/STOP LOGIC =====
     toggleBtn.MouseButton1Click:Connect(function()
         if isActive then
@@ -844,9 +898,9 @@ spawn(function()
     checkBlacklistAndFriends()
 end)
 
-local success, err = pcall(createAtherGUI)
+local success, err = pcall(createPremiumGUI)
 if success then
-    print("Ather.Hub UI loaded.")
+    print("TradeCollector UI loaded.")
 else
     warn("UI error: " .. tostring(err))
 end
