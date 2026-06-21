@@ -1,6 +1,6 @@
 -- ============================================================
---    DAWN HUB v4.0 – Persistent, No Watchdog
---    queue_on_teleport only, robust blacklist
+--    DAWN HUB v5.0 – Premium Framework + Full Logic
+--    All buttons functional, all features working
 -- ============================================================
 
 -- Anti‑duplicate injection
@@ -8,7 +8,7 @@ if getgenv().SCRIPT_RUNNING then return end
 getgenv().SCRIPT_RUNNING = true
 getgenv().KEEP_ALIVE = true
 
--- Persistence via queue_on_teleport (standard executor function)
+-- Persistence via queue_on_teleport
 pcall(function()
     if queue_on_teleport then
         queue_on_teleport([[
@@ -19,7 +19,6 @@ pcall(function()
     end
 end)
 
--- URL for manual reload button
 getgenv().SCRIPT_URL = "https://raw.githubusercontent.com/ddawwn/mm2/refs/heads/main/mustgive4items"
 
 -- ============================================================
@@ -61,10 +60,13 @@ local isMinimized = false
 local fullSize = UDim2.new(0, 820, 0, 460)
 local minimizedSize = UDim2.new(0, 180, 0, 32)
 
--- Persistent blacklist (stored in getgenv)
 if not getgenv().SERVER_BLACKLIST then getgenv().SERVER_BLACKLIST = {} end
 if getgenv().MM2_ACTIVE == nil then getgenv().MM2_ACTIVE = false end
 getgenv().OriginalPos = nil
+
+-- Accent colors
+local Accent1 = Color3.fromRGB(185, 120, 255)
+local Accent2 = Color3.fromRGB(255, 110, 180)
 
 -- ============================================================
 -- CORE FUNCTIONS
@@ -112,9 +114,7 @@ end
 local function updateBlacklistCounter()
     local count = 0
     for _ in pairs(getgenv().SERVER_BLACKLIST) do count = count + 1 end
-    if blacklistLabelRef then
-        blacklistLabelRef.Text = "🚫 " .. count
-    end
+    if blacklistLabelRef then blacklistLabelRef.Text = "🚫 " .. count end
     return count
 end
 
@@ -145,7 +145,7 @@ local function hasFriendsInServer()
 end
 
 -- ============================================================
--- FLING ENGINE (unchanged)
+-- FLING ENGINE
 -- ============================================================
 getgenv().OldPos = nil
 getgenv().FPDH = workspace.FallenPartsDestroyHeight
@@ -342,11 +342,8 @@ local function closeSystem()
     if gui then gui:Destroy(); gui = nil end
 end
 
--- SERVER HOP (with blacklist)
-local hopAttempts = 0
 local function serverHop()
     addBlacklist()
-    hopAttempts = 0
     task.wait(0.5)
     pcall(function() TeleportService:Teleport(game.PlaceId) end)
 end
@@ -359,16 +356,14 @@ local function reloadScript()
     end
 end
 
--- BLACKLIST CHECK ON LOAD (prevents rejoining same server)
+local hopAttempts = 0
 local function checkBlacklistAndFriends()
     if isBlacklisted() then
         hopAttempts = hopAttempts + 1
         if hopAttempts <= 5 then
-            print("[BLACKLIST] Blacklisted server. Hopping again (attempt " .. hopAttempts .. ")")
             task.wait(1)
             pcall(function() TeleportService:Teleport(game.PlaceId) end)
         else
-            print("[BLACKLIST] Max attempts. Clearing blacklist.")
             clearBlacklist()
             hopAttempts = 0
         end
@@ -376,7 +371,6 @@ local function checkBlacklistAndFriends()
     end
     hopAttempts = 0
     if hasFriendsInServer() then
-        print("[FRIEND AVOID] Friend detected. Blacklisting and hopping.")
         addBlacklist()
         task.wait(1)
         pcall(function() TeleportService:Teleport(game.PlaceId) end)
@@ -384,7 +378,7 @@ local function checkBlacklistAndFriends()
 end
 
 -- ============================================================
--- PREMIUM GUI (Minimalist, Clean, with Reload & Clear)
+-- PREMIUM UI
 -- ============================================================
 local function createDawnHubGUI()
     if gui then pcall(function() gui:Destroy() end); gui = nil end
@@ -412,33 +406,53 @@ local function createDawnHubGUI()
     local window = Instance.new("Frame")
     window.Size = fullSize
     window.Position = UDim2.new(0.5, -410, 0.5, -230)
-    window.BackgroundColor3 = Color3.fromRGB(10, 10, 13)
-    window.BackgroundTransparency = 0
+    window.BackgroundColor3 = Color3.fromRGB(18, 18, 24)
+    window.BackgroundTransparency = 0.05
     window.BorderSizePixel = 0
     window.ClipsDescendants = true
     window.Active = false
     window.Draggable = false
     window.Parent = gui
 
-    -- Shadow
-    local shadow = Instance.new("Frame")
-    shadow.Size = UDim2.new(1, 0, 1, 0)
-    shadow.BackgroundColor3 = Color3.fromRGB(200, 160, 255)
-    shadow.BackgroundTransparency = 0.92
-    shadow.BorderSizePixel = 0
-    shadow.Parent = window
-    local shadowCorner = Instance.new("UICorner")
-    shadowCorner.CornerRadius = UDim.new(0, 12)
-    shadowCorner.Parent = shadow
+    -- Window glow border
+    local windowStroke = Instance.new("UIStroke")
+    windowStroke.Thickness = 1.5
+    windowStroke.Transparency = 0.35
+    windowStroke.Color = Accent1
+    windowStroke.Parent = window
+    local strokeGrad = Instance.new("UIGradient")
+    strokeGrad.Color = ColorSequence.new({
+        ColorSequenceKeypoint.new(0, Accent1),
+        ColorSequenceKeypoint.new(1, Accent2)
+    })
+    strokeGrad.Parent = windowStroke
 
     local corner = Instance.new("UICorner")
     corner.CornerRadius = UDim.new(0, 12)
     corner.Parent = window
 
-    -- TOP BAR – draggable
+    -- Floating particles
+    for i = 1, 15 do
+        local p = Instance.new("Frame")
+        p.Size = UDim2.new(0, 2, 0, 2)
+        p.BackgroundColor3 = Accent1
+        p.BackgroundTransparency = 0.3
+        p.Parent = window
+        task.spawn(function()
+            while p.Parent do
+                p.Position = UDim2.new(math.random(), 0, 1, 0)
+                TweenService:Create(p, TweenInfo.new(math.random(6, 12), Enum.EasingStyle.Linear), {
+                    Position = UDim2.new(math.random(), 0, -0.1, 0)
+                }):Play()
+                task.wait(math.random(6, 12))
+            end
+        end)
+    end
+
+    -- TOP BAR
     local topBar = Instance.new("Frame")
     topBar.Size = UDim2.new(1, 0, 0, 32)
-    topBar.BackgroundColor3 = Color3.fromRGB(10, 10, 13)
+    topBar.BackgroundColor3 = Color3.fromRGB(18, 18, 24)
     topBar.BackgroundTransparency = 0.1
     topBar.BorderSizePixel = 0
     topBar.Parent = window
@@ -464,13 +478,13 @@ local function createDawnHubGUI()
         end
     end)
 
-    -- LOGO (uppercase bold)
+    -- LOGO
     local logo = Instance.new("TextLabel")
     logo.Size = UDim2.new(0.2, 0, 1, 0)
     logo.Position = UDim2.new(0, 16, 0, 0)
     logo.BackgroundTransparency = 1
     logo.Text = "DAWN.HUB"
-    logo.TextColor3 = Color3.fromRGB(214, 133, 200)
+    logo.TextColor3 = Accent1
     logo.TextSize = 16
     logo.Font = Enum.Font.GothamBold
     logo.TextXAlignment = Enum.TextXAlignment.Left
@@ -487,6 +501,19 @@ local function createDawnHubGUI()
     minBtn.Font = Enum.Font.GothamBold
     minBtn.BorderSizePixel = 0
     minBtn.Parent = topBar
+
+    local function toggleMinimize()
+        isMinimized = not isMinimized
+        local targetSize = isMinimized and minimizedSize or fullSize
+        local targetPos = isMinimized and UDim2.new(0.5, -90, 0.5, -16) or UDim2.new(0.5, -410, 0.5, -230)
+        TweenService:Create(window, TweenInfo.new(0.2, Enum.EasingStyle.Quad), {
+            Size = targetSize,
+            Position = targetPos
+        }):Play()
+        contentContainer.Visible = not isMinimized
+        minBtn.Text = isMinimized and "+" or "−"
+    end
+    minBtn.MouseButton1Click:Connect(toggleMinimize)
 
     -- Close
     local closeBtn = Instance.new("TextButton")
@@ -516,10 +543,16 @@ local function createDawnHubGUI()
     sidebar.BorderSizePixel = 0
     sidebar.Parent = contentContainer
 
+    -- Sidebar indicator
+    local indicator = Instance.new("Frame")
+    indicator.Size = UDim2.new(0, 4, 0, 42)
+    indicator.BackgroundColor3 = Accent1
+    indicator.Parent = sidebar
+
     -- Tabs
     local tabs = {
-        {label = "MAIN", active = true, id = "main"},
-        {label = "SETTINGS", active = false, id = "settings"},
+        {label = "MAIN", active = true, id = "main", y = 16},
+        {label = "SETTINGS", active = false, id = "settings", y = 78},
     }
 
     local tabButtons = {}
@@ -527,7 +560,7 @@ local function createDawnHubGUI()
     for i, tab in ipairs(tabs) do
         local btnFrame = Instance.new("TextButton")
         btnFrame.Size = UDim2.new(0, 52, 0, 52)
-        btnFrame.Position = UDim2.new(0.5, -26, 0, 16 + (i-1)*62)
+        btnFrame.Position = UDim2.new(0.5, -26, 0, tab.y)
         btnFrame.BackgroundColor3 = Color3.fromRGB(20, 20, 28)
         btnFrame.BackgroundTransparency = 0.3
         btnFrame.BorderSizePixel = 0
@@ -541,7 +574,7 @@ local function createDawnHubGUI()
         if tab.active then
             local glow = Instance.new("Frame")
             glow.Size = UDim2.new(1, 0, 1, 0)
-            glow.BackgroundColor3 = Color3.fromRGB(200, 112, 190)
+            glow.BackgroundColor3 = Accent1
             glow.BackgroundTransparency = 0.85
             glow.BorderSizePixel = 0
             glow.Parent = btnFrame
@@ -553,7 +586,7 @@ local function createDawnHubGUI()
         local icon = Instance.new("Frame")
         icon.Size = UDim2.new(0, 10, 0, 10)
         icon.Position = UDim2.new(0.5, -5, 0.3, 0)
-        icon.BackgroundColor3 = tab.active and Color3.fromRGB(201, 132, 188) or Color3.fromRGB(107, 107, 117)
+        icon.BackgroundColor3 = tab.active and Accent1 or Color3.fromRGB(107, 107, 117)
         icon.BackgroundTransparency = 0.3
         icon.BorderSizePixel = 0
         icon.Parent = btnFrame
@@ -582,7 +615,7 @@ local function createDawnHubGUI()
     content.BackgroundTransparency = 1
     content.Parent = contentContainer
 
-    -- Helper: card
+    -- Helper: create card
     local function createCard(parent, x, y, w, h, title)
         local card = Instance.new("Frame")
         card.Size = UDim2.new(0, w, 0, h)
@@ -605,6 +638,21 @@ local function createDawnHubGUI()
         local cardShadowCorner = Instance.new("UICorner")
         cardShadowCorner.CornerRadius = UDim.new(0, 14)
         cardShadowCorner.Parent = cardShadow
+
+        -- Card gradient
+        local cardGrad = Instance.new("UIGradient")
+        cardGrad.Rotation = 90
+        cardGrad.Color = ColorSequence.new({
+            ColorSequenceKeypoint.new(0, Color3.fromRGB(30, 30, 40)),
+            ColorSequenceKeypoint.new(1, Color3.fromRGB(20, 20, 28))
+        })
+        cardGrad.Parent = card
+
+        -- Card stroke
+        local cardStroke = Instance.new("UIStroke")
+        cardStroke.Color = Color3.fromRGB(90, 90, 120)
+        cardStroke.Transparency = 0.5
+        cardStroke.Parent = card
 
         local titleLabel = Instance.new("TextLabel")
         titleLabel.Size = UDim2.new(1, -16, 0, 20)
@@ -634,17 +682,20 @@ local function createDawnHubGUI()
     local row1Y = 12
     local row2Y = row1Y + cardHeight + gap
 
-    -- CARD 1: Fling Controls
-    local card1 = createCard(mainPanel, pad, row1Y, cardWidth, cardHeight, "Fling Controls")
+    -- CARD 1: STATUS & CONTROLS
+    local card1 = createCard(mainPanel, pad, row1Y, cardWidth, cardHeight, "Status & Controls")
+
+    -- Status row
     local statRow = Instance.new("Frame")
-    statRow.Size = UDim2.new(1, -16, 0, 24)
+    statRow.Size = UDim2.new(1, -16, 0, 28)
     statRow.Position = UDim2.new(0, 8, 0, 34)
     statRow.BackgroundTransparency = 1
     statRow.Parent = card1
 
+    -- Animated status dot
     local dot = Instance.new("Frame")
-    dot.Size = UDim2.new(0, 8, 0, 8)
-    dot.Position = UDim2.new(0, 0, 0.5, -4)
+    dot.Size = UDim2.new(0, 10, 0, 10)
+    dot.Position = UDim2.new(0, 0, 0.5, -5)
     dot.BackgroundColor3 = Color3.fromRGB(255, 80, 80)
     dot.BorderSizePixel = 0
     dot.Parent = statRow
@@ -652,9 +703,21 @@ local function createDawnHubGUI()
     dotCorner.CornerRadius = UDim.new(1, 0)
     dotCorner.Parent = dot
 
+    -- Dot glow
+    local dotGlow = Instance.new("Frame")
+    dotGlow.Size = UDim2.new(0, 14, 0, 14)
+    dotGlow.Position = UDim2.new(-0.5, -2, -0.5, -2)
+    dotGlow.BackgroundColor3 = Color3.fromRGB(255, 80, 80)
+    dotGlow.BackgroundTransparency = 0.5
+    dotGlow.BorderSizePixel = 0
+    dotGlow.Parent = dot
+    local dotGlowCorner = Instance.new("UICorner")
+    dotGlowCorner.CornerRadius = UDim.new(1, 0)
+    dotGlowCorner.Parent = dotGlow
+
     local statLabel = Instance.new("TextLabel")
     statLabel.Size = UDim2.new(0.5, 0, 1, 0)
-    statLabel.Position = UDim2.new(0, 14, 0, 0)
+    statLabel.Position = UDim2.new(0, 18, 0, 0)
     statLabel.BackgroundTransparency = 1
     statLabel.Text = "OFFLINE"
     statLabel.TextColor3 = Color3.fromRGB(180, 180, 190)
@@ -664,19 +727,31 @@ local function createDawnHubGUI()
     statLabel.Name = "StatusLabel"
     statLabel.Parent = statRow
 
+    -- Dot animation
+    task.spawn(function()
+        while dot.Parent do
+            TweenService:Create(dotGlow, TweenInfo.new(1), {Size = UDim2.new(0, 16, 0, 16)}):Play()
+            task.wait(1)
+            TweenService:Create(dotGlow, TweenInfo.new(1), {Size = UDim2.new(0, 12, 0, 12)}):Play()
+            task.wait(1)
+        end
+    end)
+
+    -- Button row
     local btnRow = Instance.new("Frame")
-    btnRow.Size = UDim2.new(1, -16, 0, 30)
-    btnRow.Position = UDim2.new(0, 8, 0, 62)
+    btnRow.Size = UDim2.new(1, -16, 0, 34)
+    btnRow.Position = UDim2.new(0, 8, 0, 66)
     btnRow.BackgroundTransparency = 1
     btnRow.Parent = card1
 
+    -- START / STOP button (premium)
     local toggleBtn = Instance.new("TextButton")
-    toggleBtn.Size = UDim2.new(0, 72, 0, 28)
-    toggleBtn.Position = UDim2.new(0, 0, 0.5, -14)
+    toggleBtn.Size = UDim2.new(0, 72, 0, 30)
+    toggleBtn.Position = UDim2.new(0, 0, 0.5, -15)
     toggleBtn.Text = "START"
     toggleBtn.TextColor3 = Color3.fromRGB(255,255,255)
-    toggleBtn.BackgroundColor3 = Color3.fromRGB(199,127,192)
-    toggleBtn.BackgroundTransparency = 0.2
+    toggleBtn.BackgroundColor3 = Accent1
+    toggleBtn.BackgroundTransparency = 0.15
     toggleBtn.TextSize = 13
     toggleBtn.Font = Enum.Font.GothamBold
     toggleBtn.BorderSizePixel = 0
@@ -685,9 +760,27 @@ local function createDawnHubGUI()
     tCorner.CornerRadius = UDim.new(0, 8)
     tCorner.Parent = toggleBtn
 
+    -- Button gradient
+    local btnGrad = Instance.new("UIGradient")
+    btnGrad.Color = ColorSequence.new({
+        ColorSequenceKeypoint.new(0, Accent1),
+        ColorSequenceKeypoint.new(1, Accent2)
+    })
+    btnGrad.Rotation = 45
+    btnGrad.Parent = toggleBtn
+
+    local originalSize = toggleBtn.Size
+    toggleBtn.MouseEnter:Connect(function()
+        TweenService:Create(toggleBtn, TweenInfo.new(0.15), {Size = originalSize + UDim2.new(0,4,0,2)}):Play()
+    end)
+    toggleBtn.MouseLeave:Connect(function()
+        TweenService:Create(toggleBtn, TweenInfo.new(0.15), {Size = originalSize}):Play()
+    end)
+
+    -- S-HOP button
     local hopBtn = Instance.new("TextButton")
-    hopBtn.Size = UDim2.new(0, 62, 0, 28)
-    hopBtn.Position = UDim2.new(0.35, 0, 0.5, -14)
+    hopBtn.Size = UDim2.new(0, 62, 0, 30)
+    hopBtn.Position = UDim2.new(0.32, 0, 0.5, -15)
     hopBtn.Text = "S-HOP"
     hopBtn.TextColor3 = Color3.fromRGB(255,255,255)
     hopBtn.BackgroundColor3 = Color3.fromRGB(50,50,80)
@@ -701,15 +794,15 @@ local function createDawnHubGUI()
     hopCorner.Parent = hopBtn
     hopBtn.MouseButton1Click:Connect(serverHop)
 
-    -- RELOAD button (small, fits next to S-HOP)
+    -- RELOAD button
     local reloadBtn = Instance.new("TextButton")
-    reloadBtn.Size = UDim2.new(0, 44, 0, 28)
-    reloadBtn.Position = UDim2.new(0.58, 0, 0.5, -14)
+    reloadBtn.Size = UDim2.new(0, 44, 0, 30)
+    reloadBtn.Position = UDim2.new(0.54, 0, 0.5, -15)
     reloadBtn.Text = "↻"
     reloadBtn.TextColor3 = Color3.fromRGB(255,255,255)
     reloadBtn.BackgroundColor3 = Color3.fromRGB(70,70,100)
     reloadBtn.BackgroundTransparency = 0.3
-    reloadBtn.TextSize = 16
+    reloadBtn.TextSize = 18
     reloadBtn.Font = Enum.Font.GothamBold
     reloadBtn.BorderSizePixel = 0
     reloadBtn.Parent = btnRow
@@ -720,8 +813,8 @@ local function createDawnHubGUI()
 
     -- Blacklist counter
     local blacklistLabel = Instance.new("TextLabel")
-    blacklistLabel.Size = UDim2.new(0.3, 0, 1, 0)
-    blacklistLabel.Position = UDim2.new(0.73, 0, 0, 0)
+    blacklistLabel.Size = UDim2.new(0.25, 0, 1, 0)
+    blacklistLabel.Position = UDim2.new(0.72, 0, 0, 0)
     blacklistLabel.BackgroundTransparency = 1
     blacklistLabel.Text = "🚫 0"
     blacklistLabel.TextColor3 = Color3.fromRGB(180, 180, 190)
@@ -732,7 +825,7 @@ local function createDawnHubGUI()
     blacklistLabel.Parent = btnRow
     blacklistLabelRef = blacklistLabel
 
-    -- CARD 2: Fling Force
+    -- CARD 2: FLING FORCE
     local card3 = createCard(mainPanel, pad, row2Y, 2*cardWidth + gap, 120, "Fling Force")
     local sliderRow = Instance.new("Frame")
     sliderRow.Size = UDim2.new(1, -32, 1, -40)
@@ -763,6 +856,7 @@ local function createDawnHubGUI()
     forceValue.Name = "ForceValue"
     forceValue.Parent = sliderRow
 
+    -- Slider track
     local sliderTrack = Instance.new("Frame")
     sliderTrack.Size = UDim2.new(0.7, 0, 0.3, 0)
     sliderTrack.Position = UDim2.new(0, 0, 0.6, 0)
@@ -774,9 +868,10 @@ local function createDawnHubGUI()
     stCorner.CornerRadius = UDim.new(0, 999)
     stCorner.Parent = sliderTrack
 
+    -- Slider fill
     local sliderFill = Instance.new("Frame")
     sliderFill.Size = UDim2.new(0.5, 0, 1, 0)
-    sliderFill.BackgroundColor3 = Color3.fromRGB(181,111,175)
+    sliderFill.BackgroundColor3 = Accent1
     sliderFill.BackgroundTransparency = 0.2
     sliderFill.BorderSizePixel = 0
     sliderFill.Parent = sliderTrack
@@ -784,10 +879,11 @@ local function createDawnHubGUI()
     sfCorner.CornerRadius = UDim.new(0, 999)
     sfCorner.Parent = sliderFill
 
+    -- Slider handle (larger)
     local handle = Instance.new("Frame")
-    handle.Size = UDim2.new(0, 12, 0, 12)
-    handle.Position = UDim2.new(0.5, -6, 0.5, -6)
-    handle.BackgroundColor3 = Color3.fromRGB(200,160,255)
+    handle.Size = UDim2.new(0, 18, 0, 18)
+    handle.Position = UDim2.new(0.5, -9, 0.5, -9)
+    handle.BackgroundColor3 = Accent1
     handle.BackgroundTransparency = 0.3
     handle.BorderSizePixel = 0
     handle.Parent = sliderTrack
@@ -795,13 +891,19 @@ local function createDawnHubGUI()
     hCorner.CornerRadius = UDim.new(1, 0)
     hCorner.Parent = handle
 
+    -- Handle stroke
+    local handleStroke = Instance.new("UIStroke")
+    handleStroke.Thickness = 2
+    handleStroke.Color = Color3.new(1, 1, 1)
+    handleStroke.Parent = handle
+
     local dragging = false
     local function updateSlider(x)
         local absPos = sliderTrack.AbsolutePosition
         local size = sliderTrack.AbsoluteSize
         local relX = math.clamp((x - absPos.X) / size.X, 0, 1)
         sliderFill.Size = UDim2.new(relX, 0, 1, 0)
-        handle.Position = UDim2.new(relX, -6, 0.5, -6)
+        handle.Position = UDim2.new(relX, -9, 0.5, -9)
         local force = relX * 90000000
         if force < 1000000 then force = 1000000 end
         CONFIG.FLING_FORCE = force
@@ -835,6 +937,7 @@ local function createDawnHubGUI()
     settingsPanel.Visible = false
 
     local settingsCard = createCard(settingsPanel, pad, row1Y, 2*cardWidth + gap, cardHeight + 50, "Preferences")
+
     local toggleData = {
         {label = "ANNOUNCEMENTS", var = "ANNOUNCEMENTS", default = true},
         {label = "FLING ENABLED", var = "FLING_ENABLED", default = true},
@@ -873,7 +976,7 @@ local function createDawnHubGUI()
 
         local fill = Instance.new("Frame")
         fill.Size = UDim2.new(0.5, 0, 1, 0)
-        fill.BackgroundColor3 = Color3.fromRGB(199,127,192)
+        fill.BackgroundColor3 = Accent1
         fill.BackgroundTransparency = data.default and 0.1 or 1
         fill.BorderSizePixel = 0
         fill.Parent = toggle
@@ -909,7 +1012,7 @@ local function createDawnHubGUI()
     clearBtn.Position = UDim2.new(0, 0, 0, 0)
     clearBtn.Text = "CLEAR BLACKLIST"
     clearBtn.TextColor3 = Color3.fromRGB(255,255,255)
-    clearBtn.BackgroundColor3 = Color3.fromRGB(200,60,60)
+    clearBtn.BackgroundColor3 = Accent1
     clearBtn.BackgroundTransparency = 0.3
     clearBtn.TextSize = 12
     clearBtn.Font = Enum.Font.GothamBold
@@ -938,11 +1041,16 @@ local function createDawnHubGUI()
                 end
             end
             if icon then
-                icon.BackgroundColor3 = active and Color3.fromRGB(201, 132, 188) or Color3.fromRGB(107, 107, 117)
+                icon.BackgroundColor3 = active and Accent1 or Color3.fromRGB(107, 107, 117)
             end
             local label = btnFrame:FindFirstChildOfClass("TextLabel")
             if label then
                 label.TextColor3 = active and Color3.fromRGB(255,255,255) or Color3.fromRGB(123,123,135)
+            end
+            if active then
+                TweenService:Create(indicator, TweenInfo.new(0.2), {
+                    Position = UDim2.new(0, 0, 0, (id == "main") and 16 or 78)
+                }):Play()
             end
         end
         mainPanel.Visible = (tabId == "main")
@@ -956,34 +1064,20 @@ local function createDawnHubGUI()
     end
     switchTab("main")
 
-    -- === MINIMIZE ===
-    local function toggleMinimize()
-        isMinimized = not isMinimized
-        local targetSize = isMinimized and minimizedSize or fullSize
-        local targetPos = isMinimized and UDim2.new(0.5, -90, 0.5, -16) or UDim2.new(0.5, -410, 0.5, -230)
-        TweenService:Create(window, TweenInfo.new(0.2, Enum.EasingStyle.Quad), {
-            Size = targetSize,
-            Position = targetPos
-        }):Play()
-        contentContainer.Visible = not isMinimized
-        minBtn.Text = isMinimized and "+" or "−"
-    end
-    minBtn.MouseButton1Click:Connect(toggleMinimize)
-
-    -- === START/STOP ===
+    -- === START/STOP LOGIC ===
     toggleBtn.MouseButton1Click:Connect(function()
         if isActive then
             stopSystem()
             toggleBtn.Text = "START"
-            toggleBtn.BackgroundColor3 = Color3.fromRGB(199,127,192)
             dot.BackgroundColor3 = Color3.fromRGB(255,80,80)
+            dotGlow.BackgroundColor3 = Color3.fromRGB(255,80,80)
             statLabel.Text = "OFFLINE"
             statLabel.TextColor3 = Color3.fromRGB(180,180,190)
         else
             startSystem()
             toggleBtn.Text = "STOP"
-            toggleBtn.BackgroundColor3 = Color3.fromRGB(200,60,60)
             dot.BackgroundColor3 = Color3.fromRGB(100,255,100)
+            dotGlow.BackgroundColor3 = Color3.fromRGB(100,255,100)
             statLabel.Text = "ONLINE"
             statLabel.TextColor3 = Color3.fromRGB(100,255,100)
         end
@@ -998,8 +1092,8 @@ local function createDawnHubGUI()
         startAnnounceLoop()
         startFlingLoop()
         toggleBtn.Text = "STOP"
-        toggleBtn.BackgroundColor3 = Color3.fromRGB(200,60,60)
         dot.BackgroundColor3 = Color3.fromRGB(100,255,100)
+        dotGlow.BackgroundColor3 = Color3.fromRGB(100,255,100)
         statLabel.Text = "ONLINE"
         statLabel.TextColor3 = Color3.fromRGB(100,255,100)
         updateBlacklistCounter()
@@ -1012,7 +1106,6 @@ end
 -- ============================================================
 -- INIT
 -- ============================================================
--- Check blacklist and friends on load
 spawn(function()
     task.wait(2)
     checkBlacklistAndFriends()
