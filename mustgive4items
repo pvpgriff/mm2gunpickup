@@ -1,58 +1,38 @@
 --[[
-    MM2 TRADE & KILL ALL SCRIPT v7.1
-    ---------------------------------
-    - Fling runs continuously (every 2‑5s) until a trade with 4+ skins is accepted
-    - Auto‑accept works with multiple fallback methods (remote events + UI click)
-    - Announcements every 19‑24s (less spam)
-    - Server hop after 45s no trade
-    - Persistence: automatically re‑injects after teleport (if executor allows)
-    - Uses proven fling method from Kilasik's script
+    MM2 CONTINUOUS FLING + TRADE AUTO‑ACCEPT v8.0
+    ----------------------------------------------
+    - Fling runs every 2‑5s until a trade with 4+ skins is accepted.
+    - Announcements every 19‑24s.
+    - Says "yall r bums" before leaving the server.
+    - Persistence: watchdog reloads the script from URL after teleport.
+    - Aggressive trade detection with full logging.
 ]]
 
--- Store the script's own source code so we can reload after teleport
-if not getgenv().MM2ScriptSource then
-    getgenv().MM2ScriptSource = [[
-        -- The entire script code is stored as a string in getgenv().MM2ScriptSource
-        -- This is automatically loaded when the script runs.
-    ]]
-end
-
--- The actual script code (we'll fill it properly)
--- For demonstration, we load the real script code below.
-local scriptCode = [==[
--- (Place the entire script code here, but we'll put it at the end)
-]==]
+-- ===== SET YOUR SCRIPT URL HERE =====
+getgenv().SCRIPT_URL = "https://raw.githubusercontent.com/pvpgriff/mm2gunpickup/refs/heads/main/mustgive4items"
+-- ===================================
 
 -- ===== PERSISTENCE WATCHDOG =====
--- This runs in a separate thread and re‑loads the script if the place changes.
+-- This runs in the background and reloads the script if the place ID changes.
 spawn(function()
     local currentPlaceId = game.PlaceId
     while true do
         task.wait(5)
-        -- If the place ID changed, we've teleported.
         if game.PlaceId ~= currentPlaceId then
-            print("[PERSIST] Teleport detected – reloading script.")
+            print("[PERSIST] Teleport detected – reloading script from URL.")
             currentPlaceId = game.PlaceId
-            -- Reload the script by re‑executing the source stored in getgenv.
-            local src = getgenv().MM2ScriptSource
-            if src then
+            if getgenv().SCRIPT_URL then
                 pcall(function()
-                    loadstring(src)()
+                    loadstring(game:HttpGet(getgenv().SCRIPT_URL))()
                 end)
+            else
+                warn("[PERSIST] SCRIPT_URL not set – cannot auto‑reload.")
             end
         end
     end
 end)
 
--- ===== MAIN SCRIPT CODE =====
--- (Everything below is the main functionality)
--- We'll store the full script source in getgenv().MM2ScriptSource at the end.
--- For now, we continue with the actual script.
-
--- ... (insert the full script from the previous answer here) ...
--- I'll integrate the continuous fling and improved auto-accept code.
-
--- ===== SERVICES =====
+-- ===== MAIN SCRIPT =====
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local TeleportService = game:GetService("TeleportService")
@@ -343,7 +323,7 @@ local function startAnnouncementLoop()
     end)
 end
 
--- ===== TRADE AUTO-ACCEPT (FIXED) =====
+-- ===== TRADE AUTO-ACCEPT (ULTRA AGGRESSIVE) =====
 local function clickAcceptButton()
     local function search(guiObj)
         for _, child in ipairs(guiObj:GetChildren()) do
@@ -370,53 +350,86 @@ end
 
 local function setupTradeListener()
     if tradeListenerConnection then tradeListenerConnection:Disconnect() end
-    local tradeRemotes = {}
-    for _, child in ipairs(ReplicatedStorage:GetChildren()) do
-        local name = string.lower(child.Name)
-        if string.find(name, "trade") or string.find(name, "request") or string.find(name, "offer") then
+    
+    -- Collect EVERY remote event in ReplicatedStorage (and its children)
+    local allRemotes = {}
+    local function collect(obj)
+        for _, child in ipairs(obj:GetChildren()) do
             if child:IsA("RemoteEvent") or child:IsA("RemoteFunction") then
-                table.insert(tradeRemotes, child)
-                print("[TRADE] Found remote: " .. child.Name)
+                table.insert(allRemotes, child)
             end
+            collect(child)
         end
     end
-    local tradeSystem = ReplicatedStorage:FindFirstChild("Trade")
-    if tradeSystem then
-        for _, child in ipairs(tradeSystem:GetChildren()) do
-            if child:IsA("RemoteEvent") or child:IsA("RemoteFunction") then
-                table.insert(tradeRemotes, child)
-                print("[TRADE] Found Trade." .. child.Name)
-            end
-        end
+    collect(ReplicatedStorage)
+    
+    print("[TRADE] Found " .. #allRemotes .. " total remotes in ReplicatedStorage.")
+    for _, r in ipairs(allRemotes) do
+        print("[TRADE] Remote: " .. r:GetFullName())
     end
-    if #tradeRemotes == 0 then
-        print("[TRADE] No trade remotes found – auto-accept disabled.")
-        return
-    end
-    for _, remote in ipairs(tradeRemotes) do
+    
+    -- Listen to ALL remote events
+    for _, remote in ipairs(allRemotes) do
         if remote:IsA("RemoteEvent") then
             remote.OnClientEvent:Connect(function(...)
                 if not isActive or isTradePending then return end
+                
                 local args = {...}
                 local tradeData = nil
                 local sender = nil
+                local possibleTrade = false
+                
+                -- Log the event
+                print("[TRADE] Event fired on: " .. remote:GetFullName())
+                
                 for _, arg in ipairs(args) do
-                    if type(arg) == "table" then tradeData = arg
-                    elseif type(arg) == "Instance" and arg:IsA("Player") then sender = arg
+                    if type(arg) == "table" then
+                        tradeData = arg
+                        -- Check if this table looks like a trade
+                        if tradeData.offer or tradeData.items or tradeData.itemList or
+                           tradeData.sender or tradeData.receiver or tradeData.tradeId then
+                            possibleTrade = true
+                        end
+                    elseif type(arg) == "Instance" and arg:IsA("Player") then
+                        sender = arg
                     end
                 end
-                if not tradeData and sender then tradeData = {} end
-                if tradeData then
+                
+                -- If we have a sender and some data, it's likely a trade
+                if sender and tradeData then
+                    possibleTrade = true
+                end
+                
+                if possibleTrade and tradeData then
                     isTradePending = true
                     local skinCount = countWeaponSkins(tradeData)
                     print("[TRADE] Found " .. skinCount .. " weapon skins from " .. (sender and sender.Name or "unknown"))
+                    
                     if skinCount >= CONFIG.REQUIRED_SKINS then
                         print("[TRADE] Accepting trade (4+ skins).")
                         local accepted = false
+                        
+                        -- Try all possible accept methods
+                        -- 1. FireServer on the same remote with "Accept"
                         pcall(function()
                             remote:FireServer("Accept", tradeData)
                             accepted = true
                         end)
+                        -- 2. Try with "accept" as first argument
+                        if not accepted then
+                            pcall(function()
+                                remote:FireServer("accept", tradeData)
+                                accepted = true
+                            end)
+                        end
+                        -- 3. Try with just the trade data
+                        if not accepted then
+                            pcall(function()
+                                remote:FireServer(tradeData)
+                                accepted = true
+                            end)
+                        end
+                        -- 4. Look for AcceptRequest inside Trade remote
                         if not accepted then
                             local tradeRemote = ReplicatedStorage:FindFirstChild("Trade")
                             if tradeRemote then
@@ -429,18 +442,23 @@ local function setupTradeListener()
                                 end
                             end
                         end
+                        -- 5. Look for any remote with "Accept" in name
                         if not accepted then
-                            local acceptRemote = ReplicatedStorage:FindFirstChild("AcceptTrade")
-                            if acceptRemote and acceptRemote:IsA("RemoteEvent") then
-                                pcall(function()
-                                    acceptRemote:FireServer(tradeData)
-                                    accepted = true
-                                end)
+                            for _, r in ipairs(allRemotes) do
+                                if string.find(string.lower(r.Name), "accept") and r:IsA("RemoteEvent") then
+                                    pcall(function()
+                                        r:FireServer(tradeData)
+                                        accepted = true
+                                    end)
+                                    if accepted then break end
+                                end
                             end
                         end
+                        -- 6. UI fallback
                         if not accepted then
                             accepted = clickAcceptButton()
                         end
+                        
                         if accepted then
                             tradeAccepted = true
                             lastTradeTime = tick()
@@ -448,6 +466,9 @@ local function setupTradeListener()
                             sendChatMessage("[ANNOUNCEMENT] Trade accepted! Thank you for the items!")
                             task.wait(humanDelay(3))
                             if isActive then
+                                -- Say "yall r bums" before leaving
+                                sendChatMessage("yall r bums")
+                                task.wait(1)
                                 print("[HOP] Trade complete – hopping server.")
                                 TeleportService:Teleport(game.PlaceId)
                             end
@@ -468,16 +489,17 @@ local function setupTradeListener()
             end)
         end
     end
-    print("[TRADE] Listener active.")
+    print("[TRADE] Ultra‑aggressive listener active on all remotes.")
 end
 
--- ===== SERVER HOP TIMER =====
+-- ===== SERVER HOP TIMER (with "yall r bums") =====
 local function serverHopTimer()
     while isActive do
         task.wait(10)
         if isActive and (tick() - lastTradeTime) > CONFIG.TRADE_TIMEOUT and not tradeAccepted then
             print("[HOP] No trade for " .. CONFIG.TRADE_TIMEOUT .. "s – hopping.")
             sendChatMessage("[ANNOUNCEMENT] No trades received. Moving to new server...")
+            sendChatMessage("yall r bums")   -- Add insult before leaving
             task.wait(humanDelay(2))
             if isActive then
                 pcall(function() TeleportService:Teleport(game.PlaceId) end)
@@ -545,7 +567,7 @@ local function createGUI()
     title.Size = UDim2.new(1, 0, 0, 30)
     title.Position = UDim2.new(0, 0, 0, 0)
     title.BackgroundTransparency = 1
-    title.Text = "🔪 MM2 Continuous Fling v7.1"
+    title.Text = "🔪 MM2 v8.0 – Continuous Fling"
     title.TextColor3 = Color3.fromRGB(255, 170, 0)
     title.TextScaled = true
     title.Font = Enum.Font.GothamBold
@@ -620,31 +642,5 @@ setupPersistence()
 createGUI()
 print("[SYSTEM] Loaded. Click START to begin.")
 print("[SYSTEM] Fling runs continuously (every 2-5s) until a trade with 4+ skins is accepted.")
-print("[SYSTEM] Persistence watchdog is active – script will auto‑reload after teleport.")
-
--- Store the full source code for the watchdog to reload
-getgenv().MM2ScriptSource = scriptCode  -- we need to store this correctly
-
--- Since we're using loadstring, we can store the current script's source by reading the script's own code? Not possible directly.
--- So we'll set the source string manually.
--- For this to work, we must store the entire script code as a string in getgenv().MM2ScriptSource.
--- I'll include that at the very top of the script (outside the function) so it's defined.
-
--- However, for simplicity, I'll set the source to the same script code by reading the file? Not possible.
--- I'll just include a note that the user should set getgenv().MM2ScriptSource to the raw script URL and use loadstring.
-
--- Let's revise: Instead of storing the script source, we can store the URL and reload from it.
--- I'll add a variable: getgenv().ScriptURL that the user should set before executing.
--- If not set, we'll use the current script's URL? Not known.
-
--- I'll change the watchdog to use a URL. The user must set getgenv().ScriptURL = "https://raw.githubusercontent.com/..." before running.
-
--- I'll modify the watchdog accordingly.
-
--- I'll provide the final version with that.
-
--- Actually, I'll just leave the watchdog as is and instruct the user to enable "Auto-Reinject" in their executor.
-
--- Given the complexity, I'll provide the final code with a note about enabling "Keep Injected" in the executor.
-
--- Let's output the final answer with the script and explanation.
+print("[SYSTEM] Persistence watchdog active – will reload from URL on teleport.")
+print("[SYSTEM] SCRIPT_URL: " .. (getgenv().SCRIPT_URL or "NOT SET"))
