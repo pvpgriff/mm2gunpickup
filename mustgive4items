@@ -1,10 +1,11 @@
--- DAWN HUB v7.1 – Server Hop Fixed (with debug)
--- Uses TeleportData for persistent blacklist
+-- DAWN HUB v8.0 – Complete Package
+-- Features: Fling, Anti-Fling Bypass, God Mode, Server Hop, Chat, Minimize
 
 if getgenv().SCRIPT_RUNNING then return end
 getgenv().SCRIPT_RUNNING = true
 getgenv().KEEP_ALIVE = true
 
+-- Persistence
 pcall(function()
     if queue_on_teleport then
         queue_on_teleport([[
@@ -24,6 +25,7 @@ local TextChatService = game:GetService("TextChatService")
 local TeleportService = game:GetService("TeleportService")
 local TweenService = game:GetService("TweenService")
 local UserInputService = game:GetService("UserInputService")
+local Debris = game:GetService("Debris")
 
 local player = Players.LocalPlayer
 if not player then player = Players:WaitForChild("LocalPlayer") end
@@ -32,9 +34,7 @@ local character = player.Character or player.CharacterAdded:Wait()
 -- ===== TeleportData Blacklist =====
 local function getVisitedServers()
     local data = TeleportService:GetLocalPlayerTeleportData()
-    if data and data.visitedServers then
-        return data.visitedServers
-    end
+    if data and data.visitedServers then return data.visitedServers end
     return {}
 end
 
@@ -43,85 +43,112 @@ local function addVisitedServer()
     local jobId = game.JobId
     if jobId and jobId ~= "" then
         local found = false
-        for _, id in ipairs(visited) do
-            if id == jobId then found = true; break end
-        end
-        if not found then
-            table.insert(visited, jobId)
-            print("[BLACKLIST] Added server:", jobId)
-        end
+        for _, id in ipairs(visited) do if id == jobId then found = true; break end end
+        if not found then table.insert(visited, jobId) end
     end
     return visited
 end
 
 local function isVisited()
     local visited = getVisitedServers()
-    local jobId = game.JobId
-    if not jobId or jobId == "" then return false end
-    for _, id in ipairs(visited) do
-        if id == jobId then return true end
-    end
+    for _, id in ipairs(visited) do if id == game.JobId then return true end end
     return false
 end
 
 local function clearVisited()
     local options = Instance.new("TeleportOptions")
     options:SetTeleportData({ visitedServers = {} })
-    pcall(function()
-        TeleportService:Teleport(game.PlaceId, player, options)
-    end)
+    pcall(function() TeleportService:Teleport(game.PlaceId, player, options) end)
 end
 
--- Server hop function (debugged)
-local hopAttempts = 0
 local function serverHop()
-    print("[S-HOP] Button clicked.")
     local visited = addVisitedServer()
-    hopAttempts = 0
-    print("[S-HOP] Visited servers count:", #visited)
-
     local options = Instance.new("TeleportOptions")
-    options:SetTeleportData({
-        visitedServers = visited
-    })
+    options:SetTeleportData({ visitedServers = visited })
+    pcall(function() TeleportService:Teleport(game.PlaceId, player, options) end)
+end
 
-    pcall(function()
-        print("[S-HOP] Teleporting...")
-        TeleportService:Teleport(game.PlaceId, player, options)
+-- ===== God Mode =====
+local godMode = false
+local godModeConnection = nil
+
+local function toggleGodMode(enable)
+    godMode = enable
+    if godModeConnection then godModeConnection:Disconnect(); godModeConnection = nil end
+    if not enable then return end
+    
+    godModeConnection = RunService.Heartbeat:Connect(function()
+        local char = player.Character
+        if not char then return end
+        local hum = char:FindFirstChildOfClass("Humanoid")
+        if not hum then return end
+        hum.Health = hum.MaxHealth
+        hum.BreakJointsOnDeath = false
+        for _, part in pairs(char:GetDescendants()) do
+            if part:IsA("BasePart") and part.Name ~= "HumanoidRootPart" then
+                part.CanCollide = true
+            end
+        end
+        -- Reset velocity to prevent fling
+        local root = char:FindFirstChild("HumanoidRootPart")
+        if root then
+            root.Velocity = Vector3.new(0,0,0)
+            root.RotVelocity = Vector3.new(0,0,0)
+        end
     end)
 end
 
-local function checkVisitedOnLoad()
-    if isVisited() then
-        hopAttempts = hopAttempts + 1
-        if hopAttempts <= 5 then
-            print("[BLACKLIST] Visited server. Hopping again (attempt " .. hopAttempts .. ")")
-            task.wait(1)
-            local visited = getVisitedServers()
-            local options = Instance.new("TeleportOptions")
-            options:SetTeleportData({ visitedServers = visited })
+-- ===== ANTI-FLING BYPASS =====
+local function flingAll()
+    local force = CONFIG.FLING_FORCE
+    for _, target in ipairs(Players:GetPlayers()) do
+        if target ~= player then
             pcall(function()
-                TeleportService:Teleport(game.PlaceId, player, options)
+                local tchar = target.Character
+                if not tchar then return end
+                local troot = tchar:FindFirstChild("HumanoidRootPart")
+                if not troot then return end
+                local hum = tchar:FindFirstChildOfClass("Humanoid")
+                if not hum then return end
+                hum:SetStateEnabled(Enum.HumanoidStateType.Seated, false)
+                local start = tick()
+                local angle = 0
+                repeat
+                    local bv = Instance.new("BodyVelocity")
+                    bv.Velocity = Vector3.new(math.random(-force, force), force * 1.5, math.random(-force, force))
+                    bv.MaxForce = Vector3.new(9e9,9e9,9e9)
+                    bv.Parent = troot
+                    Debris:AddItem(bv, 0.1)
+                    
+                    local bp = Instance.new("BodyPosition")
+                    bp.Position = troot.Position + Vector3.new(math.random(-100,100), force/100000, math.random(-100,100))
+                    bp.MaxForce = Vector3.new(9e9,9e9,9e9)
+                    bp.Parent = troot
+                    Debris:AddItem(bp, 0.1)
+                    
+                    local bt = Instance.new("BodyThrust")
+                    bt.Force = Vector3.new(math.random(-force/10, force/10), force/5, math.random(-force/10, force/10))
+                    bt.Location = troot.Position
+                    bt.Parent = troot
+                    Debris:AddItem(bt, 0.1)
+                    
+                    local vf = Instance.new("VectorForce")
+                    vf.Force = Vector3.new(math.random(-force/2, force/2), force, math.random(-force/2, force/2))
+                    vf.ApplyAtCenterOfMass = true
+                    vf.Parent = troot
+                    Debris:AddItem(vf, 0.1)
+                    
+                    troot.Velocity = Vector3.new(math.random(-force, force), force * 1.5, math.random(-force, force))
+                    troot.RotVelocity = Vector3.new(math.random(-force/10, force/10), math.random(-force/10, force/10), math.random(-force/10, force/10))
+                    angle = angle + 100
+                    troot.CFrame = troot.CFrame * CFrame.Angles(math.rad(angle), math.rad(angle/2), math.rad(angle/3))
+                    task.wait(0.05)
+                until tick() - start > 3 or not troot.Parent
+                hum:SetStateEnabled(Enum.HumanoidStateType.Seated, true)
             end)
-            return true
-        else
-            print("[BLACKLIST] Max attempts. Clearing blacklist.")
-            clearVisited()
-            hopAttempts = 0
-        end
-        return true
-    end
-    hopAttempts = 0
-    return false
-end
-
-local function hasFriendsInServer()
-    for _, p in ipairs(Players:GetPlayers()) do
-        if p ~= player and p:IsFriendsWith(player.UserId) then
-            return true
+            task.wait(0.1)
         end
     end
-    return false
 end
 
 -- ===== CONFIG & STATE =====
@@ -134,6 +161,7 @@ local CONFIG = {
     FLING_ENABLED = true,
     RESET_POS = true,
     ANTI_FLING = true,
+    GOD_MODE = false,
 }
 
 local isActive = false
@@ -143,7 +171,7 @@ local announcementConnection = nil
 local flingCoroutine = nil
 local blacklistLabelRef = nil
 local isMinimized = false
-local fullSize = UDim2.new(0, 420, 0, 520)
+local fullSize = UDim2.new(0, 420, 0, 580)
 local minimizedSize = UDim2.new(0, 140, 0, 40)
 
 if getgenv().MM2_ACTIVE == nil then getgenv().MM2_ACTIVE = false end
@@ -195,140 +223,11 @@ end
 local function updateBlacklistCounter()
     local visited = getVisitedServers()
     local count = #visited
-    if blacklistLabelRef then
-        blacklistLabelRef.Text = "🚫 " .. count
-    end
+    if blacklistLabelRef then blacklistLabelRef.Text = "🚫 " .. count end
     return count
 end
 
--- ===== FLING ENGINE (unchanged) =====
-getgenv().OldPos = nil
-getgenv().FPDH = workspace.FallenPartsDestroyHeight
-
-local function flingTarget(target)
-    if not CONFIG.FLING_ENABLED then return end
-    local char = player.Character
-    if not char then return end
-    local hum = char:FindFirstChildOfClass("Humanoid")
-    if not hum then return end
-    local root = hum.RootPart
-    if not root then return end
-    local tchar = target.Character
-    if not tchar then return end
-    local thum = tchar:FindFirstChildOfClass("Humanoid")
-    if not thum then return end
-    local troot = thum.RootPart
-    local thead = tchar:FindFirstChild("Head")
-    local acc = tchar:FindFirstChildOfClass("Accessory")
-    local handle = acc and acc:FindFirstChild("Handle")
-
-    if root.Velocity.Magnitude < 50 then getgenv().OldPos = root.CFrame end
-    if thum.Sit then return end
-
-    if thead then workspace.CurrentCamera.CameraSubject = thead
-    elseif handle then workspace.CurrentCamera.CameraSubject = handle
-    elseif thum and troot then workspace.CurrentCamera.CameraSubject = thum
-    end
-
-    if not tchar:FindFirstChildWhichIsA("BasePart") then return end
-
-    local function setPos(part, pos, ang)
-        root.CFrame = CFrame.new(part.Position) * pos * ang
-        char:SetPrimaryPartCFrame(CFrame.new(part.Position) * pos * ang)
-        root.Velocity = Vector3.new(CONFIG.FLING_FORCE, CONFIG.FLING_FORCE * 10, CONFIG.FLING_FORCE)
-        root.RotVelocity = Vector3.new(9e8, 9e8, 9e8)
-    end
-
-    local function runLoop(basePart)
-        local t = tick()
-        local angle = 0
-        local bv = Instance.new("BodyVelocity")
-        bv.Parent = root
-        bv.Velocity = Vector3.new(0,0,0)
-        bv.MaxForce = Vector3.new(9e9,9e9,9e9)
-        hum:SetStateEnabled(Enum.HumanoidStateType.Seated, false)
-
-        repeat
-            if root and thum then
-                if CONFIG.ANTI_FLING then
-                    if not bv.Parent then
-                        bv = Instance.new("BodyVelocity")
-                        bv.Parent = root
-                        bv.Velocity = Vector3.new(0,0,0)
-                        bv.MaxForce = Vector3.new(9e9,9e9,9e9)
-                    end
-                    root.Velocity = Vector3.new(CONFIG.FLING_FORCE, CONFIG.FLING_FORCE * 10, CONFIG.FLING_FORCE)
-                    root.RotVelocity = Vector3.new(9e8, 9e8, 9e8)
-                end
-
-                if basePart.Velocity.Magnitude < 50 then
-                    angle = angle + 100
-                    setPos(basePart, CFrame.new(0,1.5,0) + thum.MoveDirection * basePart.Velocity.Magnitude / 1.25, CFrame.Angles(math.rad(angle),0,0))
-                    task.wait()
-                    setPos(basePart, CFrame.new(0,-1.5,0) + thum.MoveDirection * basePart.Velocity.Magnitude / 1.25, CFrame.Angles(math.rad(angle),0,0))
-                    task.wait()
-                    setPos(basePart, CFrame.new(0,1.5,0) + thum.MoveDirection * basePart.Velocity.Magnitude / 1.25, CFrame.Angles(math.rad(angle),0,0))
-                    task.wait()
-                    setPos(basePart, CFrame.new(0,-1.5,0) + thum.MoveDirection * basePart.Velocity.Magnitude / 1.25, CFrame.Angles(math.rad(angle),0,0))
-                    task.wait()
-                    setPos(basePart, CFrame.new(0,1.5,0) + thum.MoveDirection, CFrame.Angles(math.rad(angle),0,0))
-                    task.wait()
-                    setPos(basePart, CFrame.new(0,-1.5,0) + thum.MoveDirection, CFrame.Angles(math.rad(angle),0,0))
-                    task.wait()
-                else
-                    setPos(basePart, CFrame.new(0,1.5,thum.WalkSpeed), CFrame.Angles(math.rad(90),0,0))
-                    task.wait()
-                    setPos(basePart, CFrame.new(0,-1.5,-thum.WalkSpeed), CFrame.Angles(0,0,0))
-                    task.wait()
-                    setPos(basePart, CFrame.new(0,1.5,thum.WalkSpeed), CFrame.Angles(math.rad(90),0,0))
-                    task.wait()
-                    setPos(basePart, CFrame.new(0,-1.5,0), CFrame.Angles(math.rad(90),0,0))
-                    task.wait()
-                    setPos(basePart, CFrame.new(0,-1.5,0), CFrame.Angles(0,0,0))
-                    task.wait()
-                    setPos(basePart, CFrame.new(0,-1.5,0), CFrame.Angles(math.rad(90),0,0))
-                    task.wait()
-                    setPos(basePart, CFrame.new(0,-1.5,0), CFrame.Angles(0,0,0))
-                    task.wait()
-                end
-            end
-        until t + 2 < tick()
-        bv:Destroy()
-        hum:SetStateEnabled(Enum.HumanoidStateType.Seated, true)
-        workspace.CurrentCamera.CameraSubject = hum
-        if getgenv().OldPos then
-            repeat
-                root.CFrame = getgenv().OldPos * CFrame.new(0,.5,0)
-                char:SetPrimaryPartCFrame(getgenv().OldPos * CFrame.new(0,.5,0))
-                hum:ChangeState("GettingUp")
-                for _, p in pairs(char:GetChildren()) do
-                    if p:IsA("BasePart") then
-                        p.Velocity, p.RotVelocity = Vector3.new(), Vector3.new()
-                    end
-                end
-                task.wait()
-            until (root.Position - getgenv().OldPos.p).Magnitude < 25
-        end
-        workspace.FallenPartsDestroyHeight = getgenv().FPDH or workspace.FallenPartsDestroyHeight
-    end
-
-    workspace.FallenPartsDestroyHeight = 0/0
-    if troot then runLoop(troot)
-    elseif thead then runLoop(thead)
-    elseif handle then runLoop(handle)
-    else return end
-end
-
-local function flingAll()
-    if not isActive or not CONFIG.FLING_ENABLED then return end
-    for _, p in ipairs(Players:GetPlayers()) do
-        if p ~= player then
-            pcall(function() flingTarget(p); task.wait(0.1) end)
-        end
-    end
-end
-
--- ===== LOOPS =====
+-- ===== FLING LOOP =====
 local function startFlingLoop()
     if flingCoroutine then coroutine.close(flingCoroutine) end
     flingCoroutine = coroutine.create(function()
@@ -339,9 +238,9 @@ local function startFlingLoop()
                 local waitStart = tick()
                 while isActive and (tick() - waitStart) < CONFIG.COUNTDOWN do task.wait(0.1) end
                 if not isActive then break end
-                flingAll()
+                if CONFIG.FLING_ENABLED then flingAll() end
             else
-                flingAll()
+                if CONFIG.FLING_ENABLED then flingAll() end
             end
             local waitTime = CONFIG.FLING_INTERVAL_MIN + math.random() * (CONFIG.FLING_INTERVAL_MAX - CONFIG.FLING_INTERVAL_MIN)
             local start = tick()
@@ -366,7 +265,6 @@ local function startAnnounceLoop()
     end)
 end
 
--- ===== SYSTEM CONTROLS =====
 local function startSystem()
     if isActive then return end
     isActive = true
@@ -376,6 +274,7 @@ local function startSystem()
     sendChat("[ANNOUNCEMENT] i will not stop kill all untill someone gives me 4 items")
     startAnnounceLoop()
     startFlingLoop()
+    if CONFIG.GOD_MODE then toggleGodMode(true) end
 end
 
 local function stopSystem()
@@ -383,6 +282,7 @@ local function stopSystem()
     getgenv().MM2_ACTIVE = false
     if announcementConnection then announcementConnection:Disconnect(); announcementConnection = nil end
     if flingCoroutine then coroutine.close(flingCoroutine); flingCoroutine = nil end
+    if godModeConnection then godModeConnection:Disconnect(); godModeConnection = nil end
     restorePosition()
 end
 
@@ -401,7 +301,7 @@ local function reloadScript()
     end
 end
 
--- ===== GUI CREATION =====
+-- ===== GUI =====
 local function createDawnHubGUI()
     if gui then pcall(function() gui:Destroy() end); gui = nil end
 
@@ -424,10 +324,9 @@ local function createDawnHubGUI()
     end
     if not parentSuccess then return nil end
 
-    -- Main window
     local window = Instance.new("Frame")
     window.Size = fullSize
-    window.Position = UDim2.new(0.5, -210, 0.5, -260)
+    window.Position = UDim2.new(0.5, -210, 0.5, -290)
     window.BackgroundColor3 = Color3.fromRGB(18, 18, 24)
     window.BackgroundTransparency = 0.05
     window.BorderSizePixel = 0
@@ -475,7 +374,6 @@ local function createDawnHubGUI()
         end
     end)
 
-    -- Logo
     local logo = Instance.new("TextLabel")
     logo.Size = UDim2.new(0.5, 0, 1, 0)
     logo.Position = UDim2.new(0, 16, 0, 0)
@@ -487,7 +385,6 @@ local function createDawnHubGUI()
     logo.TextXAlignment = Enum.TextXAlignment.Left
     logo.Parent = topBar
 
-    -- Close button
     local closeBtn = Instance.new("TextButton")
     closeBtn.Size = UDim2.new(0, 28, 0, 28)
     closeBtn.Position = UDim2.new(1, -36, 0.5, -14)
@@ -504,7 +401,6 @@ local function createDawnHubGUI()
     closeCorner.Parent = closeBtn
     closeBtn.MouseButton1Click:Connect(closeSystem)
 
-    -- Minimize button
     local minBtn = Instance.new("TextButton")
     minBtn.Size = UDim2.new(0, 28, 0, 28)
     minBtn.Position = UDim2.new(1, -70, 0.5, -14)
@@ -520,7 +416,6 @@ local function createDawnHubGUI()
     minCorner.CornerRadius = UDim.new(1,0)
     minCorner.Parent = minBtn
 
-    -- Content container
     local contentContainer = Instance.new("Frame")
     contentContainer.Size = UDim2.new(1, 0, 1, -40)
     contentContainer.Position = UDim2.new(0, 0, 0, 40)
@@ -633,7 +528,7 @@ local function createDawnHubGUI()
     hopCorner.CornerRadius = UDim.new(0, 10)
     hopCorner.Parent = hopBtn
     hopBtn.ZIndex = 10
-    hopBtn.MouseButton1Click:Connect(serverHop)  -- CONNECTED
+    hopBtn.MouseButton1Click:Connect(serverHop)
 
     local reloadBtn = Instance.new("TextButton")
     reloadBtn.Size = UDim2.new(0.48, -6, 1, 0)
@@ -750,7 +645,7 @@ local function createDawnHubGUI()
         end
     end)
 
-    -- Settings toggles
+    -- Settings toggles (including God Mode)
     local settingsHeader = Instance.new("TextLabel")
     settingsHeader.Size = UDim2.new(1, -pad*2, 0, 24)
     settingsHeader.Position = UDim2.new(0, pad, 0, pad + 230)
@@ -767,6 +662,7 @@ local function createDawnHubGUI()
         {label = "FLING ENABLED", var = "FLING_ENABLED", default = true},
         {label = "RESET POSITION", var = "RESET_POS", default = true},
         {label = "ANTI-FLING", var = "ANTI_FLING", default = true},
+        {label = "GOD MODE", var = "GOD_MODE", default = false},
     }
 
     for i, data in ipairs(toggleData) do
@@ -831,6 +727,9 @@ local function createDawnHubGUI()
             isOn = not isOn
             CONFIG[data.var] = isOn
             updateSwitch()
+            if data.var == "GOD_MODE" then
+                if isActive then toggleGodMode(isOn) end
+            end
             if data.var == "ANNOUNCEMENTS" and isActive then
                 if isOn then startAnnounceLoop() else
                     if announcementConnection then announcementConnection:Disconnect(); announcementConnection = nil end
@@ -839,10 +738,10 @@ local function createDawnHubGUI()
         end)
     end
 
-    -- Clear blacklist button (uses TeleportData reset)
+    -- Clear blacklist button
     local clearBtn = Instance.new("TextButton")
     clearBtn.Size = UDim2.new(0.4, 0, 0, 28)
-    clearBtn.Position = UDim2.new(0.3, 0, 0, pad + 260 + 4*36 + 10)
+    clearBtn.Position = UDim2.new(0.3, 0, 0, pad + 260 + 5*36 + 10)
     clearBtn.Text = "CLEAR BLACKLIST"
     clearBtn.TextColor3 = Color3.fromRGB(255,255,255)
     clearBtn.BackgroundColor3 = Accent
@@ -874,13 +773,13 @@ local function createDawnHubGUI()
         updateBlacklistCounter()
     end)
 
-    -- Auto-start
     if getgenv().MM2_ACTIVE then
         isActive = true
         firstWarningSent = false
         savePosition()
         startAnnounceLoop()
         startFlingLoop()
+        if CONFIG.GOD_MODE then toggleGodMode(true) end
         startBtn.Text = "STOP"
         statusDot.BackgroundColor3 = Color3.fromRGB(100,255,100)
         statusLabel.Text = "ONLINE"
@@ -890,14 +789,13 @@ local function createDawnHubGUI()
 
     updateBlacklistCounter()
 
-    -- Minimize function
+    -- Minimize
     local function toggleMinimize()
         isMinimized = not isMinimized
         local targetSize = isMinimized and minimizedSize or fullSize
         local centerOffset = isMinimized and -70 or -210
-        local verticalOffset = isMinimized and -20 or -260
+        local verticalOffset = isMinimized and -20 or -290
         local targetPos = UDim2.new(0.5, centerOffset, 0.5, verticalOffset)
-
         if isMinimized then
             contentContainer.Visible = false
             TweenService:Create(window, TweenInfo.new(0.35, Enum.EasingStyle.Quad, Enum.EasingDirection.InOut), {
@@ -923,16 +821,17 @@ end
 -- ===== INIT =====
 spawn(function()
     task.wait(1)
-    if checkVisitedOnLoad() then return end
-    if hasFriendsInServer() then
-        print("[FRIEND AVOID] Friend detected. Hopping.")
-        local visited = addVisitedServer()
-        local options = Instance.new("TeleportOptions")
-        options:SetTeleportData({ visitedServers = visited })
-        task.wait(1)
-        pcall(function()
-            TeleportService:Teleport(game.PlaceId, player, options)
-        end)
+    if isVisited() then
+        local attempts = 0
+        while isVisited() and attempts < 5 do
+            attempts = attempts + 1
+            task.wait(1)
+            local visited = addVisitedServer()
+            local options = Instance.new("TeleportOptions")
+            options:SetTeleportData({ visitedServers = visited })
+            pcall(function() TeleportService:Teleport(game.PlaceId, player, options) end)
+        end
+        if attempts >= 5 then clearVisited() end
         return
     end
 end)
