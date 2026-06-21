@@ -1,17 +1,18 @@
 --[[
-    MM2 CHAT + CONTINUUS FLING v12.0
-    ---------------------------------
-    - Start/Stop button (keeps GUI) – only pauses/resumes.
-    - Red X button (destroys GUI and fully uninjects).
-    - Saves your original position on Start and teleports you back on Stop/Close.
-    - Persistence state: auto‑starts if previously active (with auto‑execute).
+    MM2 CHAT + CONTINUOUS FLING v13.0
+    ----------------------------------
+    - Improved modern GUI with Rejoin button.
+    - Toggle Start/Stop (keeps GUI open).
+    - Red X fully uninjects and restores position.
+    - Auto‑restore position on Stop/Close.
+    - Persistence: auto‑starts if MM2_ACTIVE is true (use with auto‑execute).
 ]]
 
--- ===== SET YOUR URL =====
+-- ===== SET YOUR SCRIPT URL =====
 getgenv().SCRIPT_URL = "https://raw.githubusercontent.com/pvpgriff/mm2gunpickup/refs/heads/main/mustgive4items"
--- =========================
+-- ===================================
 
--- ===== PERSISTENCE WATCHDOG =====
+-- ===== PERSISTENCE WATCHDOG (fallback) =====
 if not getgenv().WATCHDOG_RUNNING then
     getgenv().WATCHDOG_RUNNING = true
     spawn(function()
@@ -39,6 +40,8 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
 local Debris = game:GetService("Debris")
 local TextChatService = game:GetService("TextChatService")
+local TeleportService = game:GetService("TeleportService")
+local TweenService = game:GetService("TweenService")
 
 local player = Players.LocalPlayer
 local character = player.Character or player.CharacterAdded:Wait()
@@ -60,13 +63,12 @@ local gui = nil
 local announcementConnection = nil
 local flingCoroutine = nil
 
--- ===== GLOBAL STATE (persists across script reloads) =====
+-- ===== GLOBAL STATE =====
 if getgenv().MM2_ACTIVE == nil then
     getgenv().MM2_ACTIVE = false
 end
 
 -- ===== SAVE ORIGINAL POSITION =====
--- We store it in getenv so it survives restarts if needed.
 getgenv().OriginalPos = nil
 
 local function saveOriginalPosition()
@@ -75,7 +77,7 @@ local function saveOriginalPosition()
         getgenv().OriginalPos = root.CFrame
         print("[POS] Saved original position.")
     else
-        warn("[POS] Could not save position – no HumanoidRootPart.")
+        warn("[POS] Could not save position.")
     end
 end
 
@@ -135,7 +137,7 @@ local function sendChatMessage(message)
     return success
 end
 
--- ===== WORKING FLING =====
+-- ===== WORKING FLING (Kilasik's method) =====
 local function SkidFling(TargetPlayer)
     local Character = player.Character
     local Humanoid = Character and Character:FindFirstChildOfClass("Humanoid")
@@ -315,37 +317,43 @@ local function startAnnouncementLoop()
     end)
 end
 
--- ===== START SYSTEM =====
+-- ===== SYSTEM CONTROLS =====
 local function startSystem()
     if isActive then return end
     isActive = true
     getgenv().MM2_ACTIVE = true
     firstWarningSent = false
-    saveOriginalPosition()   -- store starting position
+    saveOriginalPosition()
     sendChatMessage("[ANNOUNCEMENT] i will not stop kill all untill someone gives me 4 items")
     startAnnouncementLoop()
     startFlingLoop()
     print("[SYSTEM] Started.")
 end
 
--- ===== STOP SYSTEM (pause, keep GUI) =====
 local function stopSystem()
     isActive = false
     getgenv().MM2_ACTIVE = false
     if announcementConnection then announcementConnection:Disconnect(); announcementConnection = nil end
     if flingCoroutine then coroutine.close(flingCoroutine); flingCoroutine = nil end
-    restoreOriginalPosition()   -- teleport back
+    restoreOriginalPosition()
     print("[SYSTEM] Stopped (position restored).")
 end
 
--- ===== CLOSE SYSTEM (full uninject) =====
 local function closeSystem()
-    stopSystem()   -- this also restores position
+    stopSystem()
     if gui then gui:Destroy(); gui = nil end
     print("[SYSTEM] Closed and uninjected.")
 end
 
--- ===== GUI =====
+-- ===== REJOIN FUNCTION =====
+local function rejoinServer()
+    print("[REJOIN] Teleporting to new server...")
+    pcall(function()
+        TeleportService:Teleport(game.PlaceId)
+    end)
+end
+
+-- ===== IMPROVED MODERN GUI =====
 local function createGUI()
     if gui then gui:Destroy() end
     gui = Instance.new("ScreenGui")
@@ -353,77 +361,152 @@ local function createGUI()
     gui.ResetOnSpawn = false
     gui.Parent = player:WaitForChild("PlayerGui")
 
+    -- Main frame with rounded corners and shadow
     local frame = Instance.new("Frame")
-    frame.Size = UDim2.new(0, 260, 0, 130)
-    frame.Position = UDim2.new(0.5, -130, 0.5, -65)
-    frame.BackgroundColor3 = Color3.fromRGB(25, 25, 35)
-    frame.BackgroundTransparency = 0.15
-    frame.BorderSizePixel = 2
-    frame.BorderColor3 = Color3.fromRGB(255, 170, 0)
-    frame.Active = true
-    frame.Draggable = true
+    frame.Size = UDim2.new(0, 320, 0, 220)
+    frame.Position = UDim2.new(0.5, -160, 0.5, -110)
+    frame.BackgroundColor3 = Color3.fromRGB(20, 20, 30)
+    frame.BackgroundTransparency = 0.1
+    frame.BorderSizePixel = 0
+    frame.ClipsDescendants = true
     frame.Parent = gui
 
-    -- RED X – full uninject (closes GUI + stops everything)
+    -- UICorner for rounded corners
+    local corner = Instance.new("UICorner")
+    corner.CornerRadius = UDim.new(0, 12)
+    corner.Parent = frame
+
+    -- Subtle shadow (using a slightly larger frame behind with transparency)
+    local shadow = Instance.new("Frame")
+    shadow.Size = UDim2.new(1, 0, 1, 0)
+    shadow.Position = UDim2.new(0, 0, 0, 0)
+    shadow.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+    shadow.BackgroundTransparency = 0.4
+    shadow.BorderSizePixel = 0
+    shadow.Parent = frame
+
+    -- Title bar with gradient
+    local titleBar = Instance.new("Frame")
+    titleBar.Size = UDim2.new(1, 0, 0, 40)
+    titleBar.BackgroundColor3 = Color3.fromRGB(255, 170, 0)
+    titleBar.BackgroundTransparency = 0.2
+    titleBar.BorderSizePixel = 0
+    titleBar.Parent = frame
+
+    local titleCorner = Instance.new("UICorner")
+    titleCorner.CornerRadius = UDim.new(0, 12)
+    titleCorner.Parent = titleBar
+
+    local title = Instance.new("TextLabel")
+    title.Size = UDim2.new(1, -50, 1, 0)
+    title.Position = UDim2.new(0, 10, 0, 0)
+    title.BackgroundTransparency = 1
+    title.Text = "🔪 MM2 Fling & Chat"
+    title.TextColor3 = Color3.fromRGB(255, 255, 255)
+    title.TextScaled = true
+    title.Font = Enum.Font.GothamBold
+    title.TextXAlignment = Enum.TextXAlignment.Left
+    title.Parent = titleBar
+
+    -- Close (X) button (red)
     local closeBtn = Instance.new("TextButton")
     closeBtn.Size = UDim2.new(0, 30, 0, 30)
     closeBtn.Position = UDim2.new(1, -35, 0, 5)
     closeBtn.Text = "✕"
     closeBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
     closeBtn.BackgroundColor3 = Color3.fromRGB(200, 50, 50)
-    closeBtn.BackgroundTransparency = 0.2
+    closeBtn.BackgroundTransparency = 0.3
     closeBtn.TextScaled = true
     closeBtn.Font = Enum.Font.GothamBold
     closeBtn.BorderSizePixel = 0
-    closeBtn.Parent = frame
+    closeBtn.Parent = titleBar
+
+    local closeCorner = Instance.new("UICorner")
+    closeCorner.CornerRadius = UDim.new(0, 6)
+    closeCorner.Parent = closeBtn
+
     closeBtn.MouseButton1Click:Connect(closeSystem)
 
-    local title = Instance.new("TextLabel")
-    title.Size = UDim2.new(1, 0, 0, 30)
-    title.Position = UDim2.new(0, 0, 0, 0)
-    title.BackgroundTransparency = 1
-    title.Text = "🔪 MM2 Chat + Fling v12.0"
-    title.TextColor3 = Color3.fromRGB(255, 170, 0)
-    title.TextScaled = true
-    title.Font = Enum.Font.GothamBold
-    title.Parent = frame
-
+    -- Status label
     local status = Instance.new("TextLabel")
-    status.Size = UDim2.new(1, 0, 0, 20)
-    status.Position = UDim2.new(0, 0, 0, 35)
+    status.Size = UDim2.new(1, -20, 0, 30)
+    status.Position = UDim2.new(0, 10, 0, 55)
     status.BackgroundTransparency = 1
     status.Text = "Status: Offline"
     status.TextColor3 = Color3.fromRGB(255, 100, 100)
     status.TextScaled = true
     status.Font = Enum.Font.Gotham
+    status.TextXAlignment = Enum.TextXAlignment.Left
     status.Name = "StatusLabel"
     status.Parent = frame
 
-    -- Toggle button (Start/Stop – keeps GUI)
+    -- Info label
+    local info = Instance.new("TextLabel")
+    info.Size = UDim2.new(1, -20, 0, 20)
+    info.Position = UDim2.new(0, 10, 0, 90)
+    info.BackgroundTransparency = 1
+    info.Text = "Announce: 19-24s | Fling: 2-5s"
+    info.TextColor3 = Color3.fromRGB(180, 180, 180)
+    info.TextScaled = true
+    info.Font = Enum.Font.Gotham
+    info.TextXAlignment = Enum.TextXAlignment.Left
+    info.Parent = frame
+
+    -- Buttons row
+    local buttonRow = Instance.new("Frame")
+    buttonRow.Size = UDim2.new(1, -20, 0, 45)
+    buttonRow.Position = UDim2.new(0, 10, 0, 125)
+    buttonRow.BackgroundTransparency = 1
+    buttonRow.Parent = frame
+
+    -- Toggle button (Start/Stop)
     local toggleBtn = Instance.new("TextButton")
-    toggleBtn.Size = UDim2.new(0, 200, 0, 40)
-    toggleBtn.Position = UDim2.new(0.5, -100, 0, 65)
-    toggleBtn.Text = "▶ START SYSTEM"
-    toggleBtn.BackgroundColor3 = Color3.fromRGB(255, 170, 0)
-    toggleBtn.TextColor3 = Color3.new(1, 1, 1)
+    toggleBtn.Size = UDim2.new(0.5, -5, 1, 0)
+    toggleBtn.Position = UDim2.new(0, 0, 0, 0)
+    toggleBtn.Text = "▶ START"
+    toggleBtn.BackgroundColor3 = Color3.fromRGB(0, 180, 0)
+    toggleBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
     toggleBtn.TextScaled = true
     toggleBtn.Font = Enum.Font.GothamBold
     toggleBtn.BorderSizePixel = 0
-    toggleBtn.Parent = frame
+    toggleBtn.Parent = buttonRow
 
+    local toggleCorner = Instance.new("UICorner")
+    toggleCorner.CornerRadius = UDim.new(0, 6)
+    toggleCorner.Parent = toggleBtn
+
+    -- Rejoin button
+    local rejoinBtn = Instance.new("TextButton")
+    rejoinBtn.Size = UDim2.new(0.5, -5, 1, 0)
+    rejoinBtn.Position = UDim2.new(0.5, 5, 0, 0)
+    rejoinBtn.Text = "↻ REJOIN"
+    rejoinBtn.BackgroundColor3 = Color3.fromRGB(50, 100, 200)
+    rejoinBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+    rejoinBtn.TextScaled = true
+    rejoinBtn.Font = Enum.Font.GothamBold
+    rejoinBtn.BorderSizePixel = 0
+    rejoinBtn.Parent = buttonRow
+
+    local rejoinCorner = Instance.new("UICorner")
+    rejoinCorner.CornerRadius = UDim.new(0, 6)
+    rejoinCorner.Parent = rejoinBtn
+
+    rejoinBtn.MouseButton1Click:Connect(rejoinServer)
+
+    -- Toggle logic
     toggleBtn.MouseButton1Click:Connect(function()
         if isActive then
             stopSystem()
-            toggleBtn.Text = "▶ START SYSTEM"
-            toggleBtn.BackgroundColor3 = Color3.fromRGB(255, 170, 0)
+            toggleBtn.Text = "▶ START"
+            toggleBtn.BackgroundColor3 = Color3.fromRGB(0, 180, 0)
             if status then
                 status.Text = "Status: Offline ❌"
                 status.TextColor3 = Color3.fromRGB(255, 100, 100)
             end
         else
             startSystem()
-            toggleBtn.Text = "⏹ STOP SYSTEM"
-            toggleBtn.BackgroundColor3 = Color3.fromRGB(255, 50, 50)
+            toggleBtn.Text = "⏹ STOP"
+            toggleBtn.BackgroundColor3 = Color3.fromRGB(200, 50, 50)
             if status then
                 status.Text = "Status: ONLINE ✅"
                 status.TextColor3 = Color3.fromRGB(100, 255, 100)
@@ -431,11 +514,11 @@ local function createGUI()
         end
     end)
 
-    -- Auto‑start if global flag says we were active
+    -- Auto‑start if previously active
     if getgenv().MM2_ACTIVE then
         startSystem()
-        toggleBtn.Text = "⏹ STOP SYSTEM"
-        toggleBtn.BackgroundColor3 = Color3.fromRGB(255, 50, 50)
+        toggleBtn.Text = "⏹ STOP"
+        toggleBtn.BackgroundColor3 = Color3.fromRGB(200, 50, 50)
         if status then
             status.Text = "Status: ONLINE ✅"
             status.TextColor3 = Color3.fromRGB(100, 255, 100)
@@ -447,6 +530,8 @@ end
 
 -- ===== INIT =====
 createGUI()
-print("[SYSTEM] Loaded. Use the toggle button to Start/Stop (GUI stays).")
+print("[SYSTEM] Loaded. Enjoy the improved GUI!")
+print("[SYSTEM] Use START/STOP to toggle (position saved/restored).")
+print("[SYSTEM] Use REJOIN to hop to a new server.")
 print("[SYSTEM] Red X fully closes and uninjects.")
-print("[SYSTEM] Original position is saved on Start and restored on Stop/Close.")
+print("[SYSTEM] For persistence across rejoins, enable auto‑execute in your executor.")
