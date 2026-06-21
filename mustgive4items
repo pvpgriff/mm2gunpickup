@@ -1,14 +1,11 @@
--- ============================================================
---    DAWN HUB v5.0 – Premium Framework + Full Logic
---    All buttons functional, all features working
--- ============================================================
+-- DAWN HUB v6.1
 
--- Anti‑duplicate injection
+-- Anti‑dup
 if getgenv().SCRIPT_RUNNING then return end
 getgenv().SCRIPT_RUNNING = true
 getgenv().KEEP_ALIVE = true
 
--- Persistence via queue_on_teleport
+-- Persistence
 pcall(function()
     if queue_on_teleport then
         queue_on_teleport([[
@@ -21,9 +18,7 @@ end)
 
 getgenv().SCRIPT_URL = "https://raw.githubusercontent.com/ddawwn/mm2/refs/heads/main/mustgive4items"
 
--- ============================================================
--- SERVICES
--- ============================================================
+-- Services
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
@@ -36,9 +31,7 @@ local player = Players.LocalPlayer
 if not player then player = Players:WaitForChild("LocalPlayer") end
 local character = player.Character or player.CharacterAdded:Wait()
 
--- ============================================================
--- CONFIG & STATE
--- ============================================================
+-- Config
 local CONFIG = {
     ANNOUNCE_MIN = 19, ANNOUNCE_MAX = 24,
     FLING_INTERVAL_MIN = 2, FLING_INTERVAL_MAX = 5,
@@ -50,6 +43,7 @@ local CONFIG = {
     ANTI_FLING = true,
 }
 
+-- State
 local isActive = false
 local firstWarningSent = false
 local gui = nil
@@ -57,20 +51,17 @@ local announcementConnection = nil
 local flingCoroutine = nil
 local blacklistLabelRef = nil
 local isMinimized = false
-local fullSize = UDim2.new(0, 820, 0, 460)
-local minimizedSize = UDim2.new(0, 180, 0, 32)
+local fullSize = UDim2.new(0, 420, 0, 520)
+local minimizedSize = UDim2.new(0, 140, 0, 40)  -- title bar only
 
+-- Persistent data
 if not getgenv().SERVER_BLACKLIST then getgenv().SERVER_BLACKLIST = {} end
 if getgenv().MM2_ACTIVE == nil then getgenv().MM2_ACTIVE = false end
 getgenv().OriginalPos = nil
 
--- Accent colors
-local Accent1 = Color3.fromRGB(185, 120, 255)
-local Accent2 = Color3.fromRGB(255, 110, 180)
+local Accent = Color3.fromRGB(185, 120, 255)
 
--- ============================================================
--- CORE FUNCTIONS
--- ============================================================
+-- Core functions (unchanged)
 local function savePosition()
     local root = character and character:FindFirstChild("HumanoidRootPart")
     if root then getgenv().OriginalPos = root.CFrame end
@@ -144,9 +135,7 @@ local function hasFriendsInServer()
     return false
 end
 
--- ============================================================
--- FLING ENGINE
--- ============================================================
+-- FLING ENGINE (full)
 getgenv().OldPos = nil
 getgenv().FPDH = workspace.FallenPartsDestroyHeight
 
@@ -273,9 +262,7 @@ local function flingAll()
     end
 end
 
--- ============================================================
--- LOOPS
--- ============================================================
+-- Loops
 local function startFlingLoop()
     if flingCoroutine then coroutine.close(flingCoroutine) end
     flingCoroutine = coroutine.create(function()
@@ -313,9 +300,7 @@ local function startAnnounceLoop()
     end)
 end
 
--- ============================================================
--- SYSTEM CONTROLS
--- ============================================================
+-- System controls
 local function startSystem()
     if isActive then return end
     isActive = true
@@ -377,9 +362,7 @@ local function checkBlacklistAndFriends()
     end
 end
 
--- ============================================================
--- PREMIUM UI
--- ============================================================
+-- ===== GUI CREATION =====
 local function createDawnHubGUI()
     if gui then pcall(function() gui:Destroy() end); gui = nil end
 
@@ -402,10 +385,10 @@ local function createDawnHubGUI()
     end
     if not parentSuccess then return nil end
 
-    -- MAIN WINDOW
+    -- Main window
     local window = Instance.new("Frame")
     window.Size = fullSize
-    window.Position = UDim2.new(0.5, -410, 0.5, -230)
+    window.Position = UDim2.new(0.5, -210, 0.5, -260)
     window.BackgroundColor3 = Color3.fromRGB(18, 18, 24)
     window.BackgroundTransparency = 0.05
     window.BorderSizePixel = 0
@@ -414,44 +397,19 @@ local function createDawnHubGUI()
     window.Draggable = false
     window.Parent = gui
 
-    -- Window glow border
-    local windowStroke = Instance.new("UIStroke")
-    windowStroke.Thickness = 1.5
-    windowStroke.Transparency = 0.35
-    windowStroke.Color = Accent1
-    windowStroke.Parent = window
-    local strokeGrad = Instance.new("UIGradient")
-    strokeGrad.Color = ColorSequence.new({
-        ColorSequenceKeypoint.new(0, Accent1),
-        ColorSequenceKeypoint.new(1, Accent2)
-    })
-    strokeGrad.Parent = windowStroke
-
     local corner = Instance.new("UICorner")
-    corner.CornerRadius = UDim.new(0, 12)
+    corner.CornerRadius = UDim.new(0, 16)
     corner.Parent = window
 
-    -- Floating particles
-    for i = 1, 15 do
-        local p = Instance.new("Frame")
-        p.Size = UDim2.new(0, 2, 0, 2)
-        p.BackgroundColor3 = Accent1
-        p.BackgroundTransparency = 0.3
-        p.Parent = window
-        task.spawn(function()
-            while p.Parent do
-                p.Position = UDim2.new(math.random(), 0, 1, 0)
-                TweenService:Create(p, TweenInfo.new(math.random(6, 12), Enum.EasingStyle.Linear), {
-                    Position = UDim2.new(math.random(), 0, -0.1, 0)
-                }):Play()
-                task.wait(math.random(6, 12))
-            end
-        end)
-    end
+    local border = Instance.new("UIStroke")
+    border.Thickness = 1.5
+    border.Transparency = 0.6
+    border.Color = Accent
+    border.Parent = window
 
-    -- TOP BAR
+    -- Title bar (draggable)
     local topBar = Instance.new("Frame")
-    topBar.Size = UDim2.new(1, 0, 0, 32)
+    topBar.Size = UDim2.new(1, 0, 0, 40)
     topBar.BackgroundColor3 = Color3.fromRGB(18, 18, 24)
     topBar.BackgroundTransparency = 0.1
     topBar.BorderSizePixel = 0
@@ -478,400 +436,228 @@ local function createDawnHubGUI()
         end
     end)
 
-    -- LOGO
+    -- Logo (fixed position, stays in place during minimize)
     local logo = Instance.new("TextLabel")
-    logo.Size = UDim2.new(0.2, 0, 1, 0)
+    logo.Size = UDim2.new(0.5, 0, 1, 0)
     logo.Position = UDim2.new(0, 16, 0, 0)
     logo.BackgroundTransparency = 1
     logo.Text = "DAWN.HUB"
-    logo.TextColor3 = Accent1
-    logo.TextSize = 16
+    logo.TextColor3 = Accent
+    logo.TextSize = 18
     logo.Font = Enum.Font.GothamBold
     logo.TextXAlignment = Enum.TextXAlignment.Left
     logo.Parent = topBar
 
-    -- Minimize
+    -- macOS-style close button
+    local closeBtn = Instance.new("TextButton")
+    closeBtn.Size = UDim2.new(0, 28, 0, 28)
+    closeBtn.Position = UDim2.new(1, -36, 0.5, -14)
+    closeBtn.Text = "×"
+    closeBtn.TextColor3 = Color3.new(1,1,1)
+    closeBtn.BackgroundColor3 = Color3.fromRGB(255,75,75)
+    closeBtn.BackgroundTransparency = 0.3
+    closeBtn.TextSize = 18
+    closeBtn.Font = Enum.Font.GothamBold
+    closeBtn.BorderSizePixel = 0
+    closeBtn.Parent = topBar
+    local closeCorner = Instance.new("UICorner")
+    closeCorner.CornerRadius = UDim.new(1,0)
+    closeCorner.Parent = closeBtn
+    closeBtn.MouseButton1Click:Connect(closeSystem)
+
+    -- Minimize button
     local minBtn = Instance.new("TextButton")
     minBtn.Size = UDim2.new(0, 28, 0, 28)
-    minBtn.Position = UDim2.new(1, -64, 0.5, -14)
+    minBtn.Position = UDim2.new(1, -70, 0.5, -14)
     minBtn.Text = "−"
-    minBtn.TextColor3 = Color3.fromRGB(180, 180, 200)
-    minBtn.BackgroundTransparency = 1
+    minBtn.TextColor3 = Color3.new(1,1,1)
+    minBtn.BackgroundColor3 = Color3.fromRGB(255,200,50)
+    minBtn.BackgroundTransparency = 0.3
     minBtn.TextSize = 18
     minBtn.Font = Enum.Font.GothamBold
     minBtn.BorderSizePixel = 0
     minBtn.Parent = topBar
+    local minCorner = Instance.new("UICorner")
+    minCorner.CornerRadius = UDim.new(1,0)
+    minCorner.Parent = minBtn
 
-    local function toggleMinimize()
-        isMinimized = not isMinimized
-        local targetSize = isMinimized and minimizedSize or fullSize
-        local targetPos = isMinimized and UDim2.new(0.5, -90, 0.5, -16) or UDim2.new(0.5, -410, 0.5, -230)
-        TweenService:Create(window, TweenInfo.new(0.2, Enum.EasingStyle.Quad), {
-            Size = targetSize,
-            Position = targetPos
-        }):Play()
-        contentContainer.Visible = not isMinimized
-        minBtn.Text = isMinimized and "+" or "−"
-    end
-    minBtn.MouseButton1Click:Connect(toggleMinimize)
-
-    -- Close
-    local closeBtn = Instance.new("TextButton")
-    closeBtn.Size = UDim2.new(0, 28, 0, 28)
-    closeBtn.Position = UDim2.new(1, -34, 0.5, -14)
-    closeBtn.Text = "✕"
-    closeBtn.TextColor3 = Color3.fromRGB(180, 180, 200)
-    closeBtn.BackgroundTransparency = 1
-    closeBtn.TextSize = 14
-    closeBtn.Font = Enum.Font.Gotham
-    closeBtn.BorderSizePixel = 0
-    closeBtn.Parent = topBar
-    closeBtn.MouseButton1Click:Connect(closeSystem)
-
-    -- CONTENT CONTAINER
+    -- Content container (will be hidden when minimized)
     local contentContainer = Instance.new("Frame")
-    contentContainer.Size = UDim2.new(1, 0, 1, -32)
-    contentContainer.Position = UDim2.new(0, 0, 0, 32)
+    contentContainer.Size = UDim2.new(1, 0, 1, -40)
+    contentContainer.Position = UDim2.new(0, 0, 0, 40)
     contentContainer.BackgroundTransparency = 1
     contentContainer.Parent = window
 
-    -- SIDEBAR
-    local sidebar = Instance.new("Frame")
-    sidebar.Size = UDim2.new(0, 180, 1, 0)
-    sidebar.BackgroundColor3 = Color3.fromRGB(14, 14, 19)
-    sidebar.BackgroundTransparency = 0.2
-    sidebar.BorderSizePixel = 0
-    sidebar.Parent = contentContainer
+    -- Build all content inside contentContainer (same as before)
+    local pad = 20
 
-    -- Sidebar indicator
-    local indicator = Instance.new("Frame")
-    indicator.Size = UDim2.new(0, 4, 0, 42)
-    indicator.BackgroundColor3 = Accent1
-    indicator.Parent = sidebar
+    -- Status
+    local statusFrame = Instance.new("Frame")
+    statusFrame.Size = UDim2.new(1, -pad*2, 0, 40)
+    statusFrame.Position = UDim2.new(0, pad, 0, pad)
+    statusFrame.BackgroundTransparency = 1
+    statusFrame.Parent = contentContainer
 
-    -- Tabs
-    local tabs = {
-        {label = "MAIN", active = true, id = "main", y = 16},
-        {label = "SETTINGS", active = false, id = "settings", y = 78},
-    }
-
-    local tabButtons = {}
-
-    for i, tab in ipairs(tabs) do
-        local btnFrame = Instance.new("TextButton")
-        btnFrame.Size = UDim2.new(0, 52, 0, 52)
-        btnFrame.Position = UDim2.new(0.5, -26, 0, tab.y)
-        btnFrame.BackgroundColor3 = Color3.fromRGB(20, 20, 28)
-        btnFrame.BackgroundTransparency = 0.3
-        btnFrame.BorderSizePixel = 0
-        btnFrame.Text = ""
-        btnFrame.Parent = sidebar
-
-        local btnCorner = Instance.new("UICorner")
-        btnCorner.CornerRadius = UDim.new(0, 14)
-        btnCorner.Parent = btnFrame
-
-        if tab.active then
-            local glow = Instance.new("Frame")
-            glow.Size = UDim2.new(1, 0, 1, 0)
-            glow.BackgroundColor3 = Accent1
-            glow.BackgroundTransparency = 0.85
-            glow.BorderSizePixel = 0
-            glow.Parent = btnFrame
-            local gCorner = Instance.new("UICorner")
-            gCorner.CornerRadius = UDim.new(0, 14)
-            gCorner.Parent = glow
-        end
-
-        local icon = Instance.new("Frame")
-        icon.Size = UDim2.new(0, 10, 0, 10)
-        icon.Position = UDim2.new(0.5, -5, 0.3, 0)
-        icon.BackgroundColor3 = tab.active and Accent1 or Color3.fromRGB(107, 107, 117)
-        icon.BackgroundTransparency = 0.3
-        icon.BorderSizePixel = 0
-        icon.Parent = btnFrame
-        local iconCorner = Instance.new("UICorner")
-        iconCorner.CornerRadius = UDim.new(0, 2)
-        iconCorner.Parent = icon
-
-        local label = Instance.new("TextLabel")
-        label.Size = UDim2.new(1, 0, 0.35, 0)
-        label.Position = UDim2.new(0, 0, 0.6, 0)
-        label.BackgroundTransparency = 1
-        label.Text = tab.label
-        label.TextColor3 = tab.active and Color3.fromRGB(255,255,255) or Color3.fromRGB(123,123,135)
-        label.TextSize = 12
-        label.Font = Enum.Font.GothamBold
-        label.TextXAlignment = Enum.TextXAlignment.Center
-        label.Parent = btnFrame
-
-        tabButtons[tab.id] = btnFrame
-    end
-
-    -- CONTENT AREA
-    local content = Instance.new("Frame")
-    content.Size = UDim2.new(1, -180, 1, 0)
-    content.Position = UDim2.new(0, 180, 0, 0)
-    content.BackgroundTransparency = 1
-    content.Parent = contentContainer
-
-    -- Helper: create card
-    local function createCard(parent, x, y, w, h, title)
-        local card = Instance.new("Frame")
-        card.Size = UDim2.new(0, w, 0, h)
-        card.Position = UDim2.new(0, x, 0, y)
-        card.BackgroundColor3 = Color3.fromRGB(18, 18, 24)
-        card.BackgroundTransparency = 0.20
-        card.BorderSizePixel = 0
-        card.Parent = parent
-
-        local cardCorner = Instance.new("UICorner")
-        cardCorner.CornerRadius = UDim.new(0, 14)
-        cardCorner.Parent = card
-
-        local cardShadow = Instance.new("Frame")
-        cardShadow.Size = UDim2.new(1, 0, 1, 0)
-        cardShadow.BackgroundColor3 = Color3.fromRGB(0,0,0)
-        cardShadow.BackgroundTransparency = 0.85
-        cardShadow.BorderSizePixel = 0
-        cardShadow.Parent = card
-        local cardShadowCorner = Instance.new("UICorner")
-        cardShadowCorner.CornerRadius = UDim.new(0, 14)
-        cardShadowCorner.Parent = cardShadow
-
-        -- Card gradient
-        local cardGrad = Instance.new("UIGradient")
-        cardGrad.Rotation = 90
-        cardGrad.Color = ColorSequence.new({
-            ColorSequenceKeypoint.new(0, Color3.fromRGB(30, 30, 40)),
-            ColorSequenceKeypoint.new(1, Color3.fromRGB(20, 20, 28))
-        })
-        cardGrad.Parent = card
-
-        -- Card stroke
-        local cardStroke = Instance.new("UIStroke")
-        cardStroke.Color = Color3.fromRGB(90, 90, 120)
-        cardStroke.Transparency = 0.5
-        cardStroke.Parent = card
-
-        local titleLabel = Instance.new("TextLabel")
-        titleLabel.Size = UDim2.new(1, -16, 0, 20)
-        titleLabel.Position = UDim2.new(0, 8, 0, 10)
-        titleLabel.BackgroundTransparency = 1
-        titleLabel.Text = string.upper(title)
-        titleLabel.TextColor3 = Color3.fromRGB(110, 110, 121)
-        titleLabel.TextSize = 13
-        titleLabel.Font = Enum.Font.GothamBold
-        titleLabel.TextXAlignment = Enum.TextXAlignment.Left
-        titleLabel.Parent = card
-
-        return card
-    end
-
-    -- === MAIN TAB ===
-    local mainPanel = Instance.new("Frame")
-    mainPanel.Size = UDim2.new(1, 0, 1, 0)
-    mainPanel.BackgroundTransparency = 1
-    mainPanel.Parent = content
-    mainPanel.Visible = true
-
-    local pad = 16
-    local gap = 16
-    local cardWidth = 250
-    local cardHeight = 155
-    local row1Y = 12
-    local row2Y = row1Y + cardHeight + gap
-
-    -- CARD 1: STATUS & CONTROLS
-    local card1 = createCard(mainPanel, pad, row1Y, cardWidth, cardHeight, "Status & Controls")
-
-    -- Status row
-    local statRow = Instance.new("Frame")
-    statRow.Size = UDim2.new(1, -16, 0, 28)
-    statRow.Position = UDim2.new(0, 8, 0, 34)
-    statRow.BackgroundTransparency = 1
-    statRow.Parent = card1
-
-    -- Animated status dot
-    local dot = Instance.new("Frame")
-    dot.Size = UDim2.new(0, 10, 0, 10)
-    dot.Position = UDim2.new(0, 0, 0.5, -5)
-    dot.BackgroundColor3 = Color3.fromRGB(255, 80, 80)
-    dot.BorderSizePixel = 0
-    dot.Parent = statRow
+    local statusDot = Instance.new("Frame")
+    statusDot.Size = UDim2.new(0, 12, 0, 12)
+    statusDot.Position = UDim2.new(0, 0, 0.5, -6)
+    statusDot.BackgroundColor3 = Color3.fromRGB(255,80,80)
+    statusDot.BorderSizePixel = 0
+    statusDot.Parent = statusFrame
     local dotCorner = Instance.new("UICorner")
-    dotCorner.CornerRadius = UDim.new(1, 0)
-    dotCorner.Parent = dot
+    dotCorner.CornerRadius = UDim.new(1,0)
+    dotCorner.Parent = statusDot
 
-    -- Dot glow
-    local dotGlow = Instance.new("Frame")
-    dotGlow.Size = UDim2.new(0, 14, 0, 14)
-    dotGlow.Position = UDim2.new(-0.5, -2, -0.5, -2)
-    dotGlow.BackgroundColor3 = Color3.fromRGB(255, 80, 80)
-    dotGlow.BackgroundTransparency = 0.5
-    dotGlow.BorderSizePixel = 0
-    dotGlow.Parent = dot
-    local dotGlowCorner = Instance.new("UICorner")
-    dotGlowCorner.CornerRadius = UDim.new(1, 0)
-    dotGlowCorner.Parent = dotGlow
-
-    local statLabel = Instance.new("TextLabel")
-    statLabel.Size = UDim2.new(0.5, 0, 1, 0)
-    statLabel.Position = UDim2.new(0, 18, 0, 0)
-    statLabel.BackgroundTransparency = 1
-    statLabel.Text = "OFFLINE"
-    statLabel.TextColor3 = Color3.fromRGB(180, 180, 190)
-    statLabel.TextSize = 13
-    statLabel.Font = Enum.Font.GothamBold
-    statLabel.TextXAlignment = Enum.TextXAlignment.Left
-    statLabel.Name = "StatusLabel"
-    statLabel.Parent = statRow
-
-    -- Dot animation
     task.spawn(function()
-        while dot.Parent do
-            TweenService:Create(dotGlow, TweenInfo.new(1), {Size = UDim2.new(0, 16, 0, 16)}):Play()
+        while statusDot.Parent do
+            TweenService:Create(statusDot, TweenInfo.new(1), {Size = UDim2.new(0,16,0,16)}):Play()
             task.wait(1)
-            TweenService:Create(dotGlow, TweenInfo.new(1), {Size = UDim2.new(0, 12, 0, 12)}):Play()
+            TweenService:Create(statusDot, TweenInfo.new(1), {Size = UDim2.new(0,10,0,10)}):Play()
             task.wait(1)
         end
     end)
 
-    -- Button row
-    local btnRow = Instance.new("Frame")
-    btnRow.Size = UDim2.new(1, -16, 0, 34)
-    btnRow.Position = UDim2.new(0, 8, 0, 66)
-    btnRow.BackgroundTransparency = 1
-    btnRow.Parent = card1
+    local statusLabel = Instance.new("TextLabel")
+    statusLabel.Size = UDim2.new(0.5, 0, 1, 0)
+    statusLabel.Position = UDim2.new(0, 20, 0, 0)
+    statusLabel.BackgroundTransparency = 1
+    statusLabel.Text = "OFFLINE"
+    statusLabel.TextColor3 = Color3.fromRGB(180,180,190)
+    statusLabel.TextSize = 14
+    statusLabel.Font = Enum.Font.GothamBold
+    statusLabel.TextXAlignment = Enum.TextXAlignment.Left
+    statusLabel.Name = "StatusLabel"
+    statusLabel.Parent = statusFrame
 
-    -- START / STOP button (premium)
-    local toggleBtn = Instance.new("TextButton")
-    toggleBtn.Size = UDim2.new(0, 72, 0, 30)
-    toggleBtn.Position = UDim2.new(0, 0, 0.5, -15)
-    toggleBtn.Text = "START"
-    toggleBtn.TextColor3 = Color3.fromRGB(255,255,255)
-    toggleBtn.BackgroundColor3 = Accent1
-    toggleBtn.BackgroundTransparency = 0.15
-    toggleBtn.TextSize = 13
-    toggleBtn.Font = Enum.Font.GothamBold
-    toggleBtn.BorderSizePixel = 0
-    toggleBtn.Parent = btnRow
-    local tCorner = Instance.new("UICorner")
-    tCorner.CornerRadius = UDim.new(0, 8)
-    tCorner.Parent = toggleBtn
+    local blacklistLabel = Instance.new("TextLabel")
+    blacklistLabel.Size = UDim2.new(0.3, 0, 1, 0)
+    blacklistLabel.Position = UDim2.new(0.7, 0, 0, 0)
+    blacklistLabel.BackgroundTransparency = 1
+    blacklistLabel.Text = "🚫 0"
+    blacklistLabel.TextColor3 = Color3.fromRGB(180,180,190)
+    blacklistLabel.TextSize = 14
+    blacklistLabel.Font = Enum.Font.GothamBold
+    blacklistLabel.TextXAlignment = Enum.TextXAlignment.Right
+    blacklistLabel.Name = "BlacklistLabel"
+    blacklistLabel.Parent = statusFrame
+    blacklistLabelRef = blacklistLabel
 
-    -- Button gradient
-    local btnGrad = Instance.new("UIGradient")
-    btnGrad.Color = ColorSequence.new({
-        ColorSequenceKeypoint.new(0, Accent1),
-        ColorSequenceKeypoint.new(1, Accent2)
+    -- START button
+    local startBtn = Instance.new("TextButton")
+    startBtn.Size = UDim2.new(1, -pad*2, 0, 50)
+    startBtn.Position = UDim2.new(0, pad, 0, pad + 50)
+    startBtn.Text = "START"
+    startBtn.TextColor3 = Color3.fromRGB(255,255,255)
+    startBtn.BackgroundColor3 = Accent
+    startBtn.BackgroundTransparency = 0.15
+    startBtn.TextSize = 18
+    startBtn.Font = Enum.Font.GothamBold
+    startBtn.BorderSizePixel = 0
+    startBtn.Parent = contentContainer
+    local startCorner = Instance.new("UICorner")
+    startCorner.CornerRadius = UDim.new(0, 12)
+    startCorner.Parent = startBtn
+    local startGrad = Instance.new("UIGradient")
+    startGrad.Color = ColorSequence.new({
+        ColorSequenceKeypoint.new(0, Accent),
+        ColorSequenceKeypoint.new(1, Color3.fromRGB(255,110,180))
     })
-    btnGrad.Rotation = 45
-    btnGrad.Parent = toggleBtn
+    startGrad.Rotation = 45
+    startGrad.Parent = startBtn
 
-    local originalSize = toggleBtn.Size
-    toggleBtn.MouseEnter:Connect(function()
-        TweenService:Create(toggleBtn, TweenInfo.new(0.15), {Size = originalSize + UDim2.new(0,4,0,2)}):Play()
+    local startOriginalSize = startBtn.Size
+    startBtn.MouseEnter:Connect(function()
+        TweenService:Create(startBtn, TweenInfo.new(0.15), {Size = startOriginalSize + UDim2.new(0,8,0,4)}):Play()
     end)
-    toggleBtn.MouseLeave:Connect(function()
-        TweenService:Create(toggleBtn, TweenInfo.new(0.15), {Size = originalSize}):Play()
+    startBtn.MouseLeave:Connect(function()
+        TweenService:Create(startBtn, TweenInfo.new(0.15), {Size = startOriginalSize}):Play()
     end)
 
-    -- S-HOP button
+    -- Secondary buttons row
+    local secondaryRow = Instance.new("Frame")
+    secondaryRow.Size = UDim2.new(1, -pad*2, 0, 44)
+    secondaryRow.Position = UDim2.new(0, pad, 0, pad + 110)
+    secondaryRow.BackgroundTransparency = 1
+    secondaryRow.Parent = contentContainer
+
     local hopBtn = Instance.new("TextButton")
-    hopBtn.Size = UDim2.new(0, 62, 0, 30)
-    hopBtn.Position = UDim2.new(0.32, 0, 0.5, -15)
+    hopBtn.Size = UDim2.new(0.48, -6, 1, 0)
+    hopBtn.Position = UDim2.new(0, 0, 0, 0)
     hopBtn.Text = "S-HOP"
     hopBtn.TextColor3 = Color3.fromRGB(255,255,255)
     hopBtn.BackgroundColor3 = Color3.fromRGB(50,50,80)
     hopBtn.BackgroundTransparency = 0.3
-    hopBtn.TextSize = 13
+    hopBtn.TextSize = 15
     hopBtn.Font = Enum.Font.GothamBold
     hopBtn.BorderSizePixel = 0
-    hopBtn.Parent = btnRow
+    hopBtn.Parent = secondaryRow
     local hopCorner = Instance.new("UICorner")
-    hopCorner.CornerRadius = UDim.new(0, 8)
+    hopCorner.CornerRadius = UDim.new(0, 10)
     hopCorner.Parent = hopBtn
+    hopBtn.ZIndex = 10
     hopBtn.MouseButton1Click:Connect(serverHop)
 
-    -- RELOAD button
     local reloadBtn = Instance.new("TextButton")
-    reloadBtn.Size = UDim2.new(0, 44, 0, 30)
-    reloadBtn.Position = UDim2.new(0.54, 0, 0.5, -15)
-    reloadBtn.Text = "↻"
+    reloadBtn.Size = UDim2.new(0.48, -6, 1, 0)
+    reloadBtn.Position = UDim2.new(0.52, 0, 0, 0)
+    reloadBtn.Text = "↻ RELOAD"
     reloadBtn.TextColor3 = Color3.fromRGB(255,255,255)
     reloadBtn.BackgroundColor3 = Color3.fromRGB(70,70,100)
     reloadBtn.BackgroundTransparency = 0.3
-    reloadBtn.TextSize = 18
+    reloadBtn.TextSize = 15
     reloadBtn.Font = Enum.Font.GothamBold
     reloadBtn.BorderSizePixel = 0
-    reloadBtn.Parent = btnRow
+    reloadBtn.Parent = secondaryRow
     local reloadCorner = Instance.new("UICorner")
-    reloadCorner.CornerRadius = UDim.new(0, 8)
+    reloadCorner.CornerRadius = UDim.new(0, 10)
     reloadCorner.Parent = reloadBtn
+    reloadBtn.ZIndex = 10
     reloadBtn.MouseButton1Click:Connect(reloadScript)
 
-    -- Blacklist counter
-    local blacklistLabel = Instance.new("TextLabel")
-    blacklistLabel.Size = UDim2.new(0.25, 0, 1, 0)
-    blacklistLabel.Position = UDim2.new(0.72, 0, 0, 0)
-    blacklistLabel.BackgroundTransparency = 1
-    blacklistLabel.Text = "🚫 0"
-    blacklistLabel.TextColor3 = Color3.fromRGB(180, 180, 190)
-    blacklistLabel.TextSize = 13
-    blacklistLabel.Font = Enum.Font.GothamBold
-    blacklistLabel.TextXAlignment = Enum.TextXAlignment.Left
-    blacklistLabel.Name = "BlacklistLabel"
-    blacklistLabel.Parent = btnRow
-    blacklistLabelRef = blacklistLabel
+    -- Force slider
+    local sliderFrame = Instance.new("Frame")
+    sliderFrame.Size = UDim2.new(1, -pad*2, 0, 50)
+    sliderFrame.Position = UDim2.new(0, pad, 0, pad + 170)
+    sliderFrame.BackgroundTransparency = 1
+    sliderFrame.Parent = contentContainer
 
-    -- CARD 2: FLING FORCE
-    local card3 = createCard(mainPanel, pad, row2Y, 2*cardWidth + gap, 120, "Fling Force")
-    local sliderRow = Instance.new("Frame")
-    sliderRow.Size = UDim2.new(1, -32, 1, -40)
-    sliderRow.Position = UDim2.new(0, 16, 0, 36)
-    sliderRow.BackgroundTransparency = 1
-    sliderRow.Parent = card3
+    local sliderLabel = Instance.new("TextLabel")
+    sliderLabel.Size = UDim2.new(0.3, 0, 0.5, 0)
+    sliderLabel.Position = UDim2.new(0, 0, 0, 0)
+    sliderLabel.BackgroundTransparency = 1
+    sliderLabel.Text = "FORCE"
+    sliderLabel.TextColor3 = Color3.fromRGB(180,180,190)
+    sliderLabel.TextSize = 14
+    sliderLabel.Font = Enum.Font.GothamBold
+    sliderLabel.TextXAlignment = Enum.TextXAlignment.Left
+    sliderLabel.Parent = sliderFrame
 
-    local forceLabel = Instance.new("TextLabel")
-    forceLabel.Size = UDim2.new(0.3, 0, 0.4, 0)
-    forceLabel.Position = UDim2.new(0, 0, 0, 0)
-    forceLabel.BackgroundTransparency = 1
-    forceLabel.Text = "FORCE"
-    forceLabel.TextColor3 = Color3.fromRGB(180,180,190)
-    forceLabel.TextSize = 13
-    forceLabel.Font = Enum.Font.GothamBold
-    forceLabel.TextXAlignment = Enum.TextXAlignment.Left
-    forceLabel.Parent = sliderRow
+    local forceValueLabel = Instance.new("TextLabel")
+    forceValueLabel.Size = UDim2.new(0.3, 0, 0.5, 0)
+    forceValueLabel.Position = UDim2.new(0.7, 0, 0, 0)
+    forceValueLabel.BackgroundTransparency = 1
+    forceValueLabel.Text = "5.0e7"
+    forceValueLabel.TextColor3 = Color3.fromRGB(180,180,190)
+    forceValueLabel.TextSize = 14
+    forceValueLabel.Font = Enum.Font.GothamBold
+    forceValueLabel.TextXAlignment = Enum.TextXAlignment.Right
+    forceValueLabel.Name = "ForceValue"
+    forceValueLabel.Parent = sliderFrame
 
-    local forceValue = Instance.new("TextLabel")
-    forceValue.Size = UDim2.new(0.3, 0, 0.4, 0)
-    forceValue.Position = UDim2.new(0.45, 0, 0, 0)
-    forceValue.BackgroundTransparency = 1
-    forceValue.Text = "5.0e7"
-    forceValue.TextColor3 = Color3.fromRGB(180,180,190)
-    forceValue.TextSize = 13
-    forceValue.Font = Enum.Font.GothamBold
-    forceValue.TextXAlignment = Enum.TextXAlignment.Right
-    forceValue.Name = "ForceValue"
-    forceValue.Parent = sliderRow
-
-    -- Slider track
     local sliderTrack = Instance.new("Frame")
-    sliderTrack.Size = UDim2.new(0.7, 0, 0.3, 0)
-    sliderTrack.Position = UDim2.new(0, 0, 0.6, 0)
+    sliderTrack.Size = UDim2.new(1, 0, 0.35, 0)
+    sliderTrack.Position = UDim2.new(0, 0, 0.65, 0)
     sliderTrack.BackgroundColor3 = Color3.fromRGB(28,28,37)
     sliderTrack.BackgroundTransparency = 0.3
     sliderTrack.BorderSizePixel = 0
-    sliderTrack.Parent = sliderRow
+    sliderTrack.Parent = sliderFrame
     local stCorner = Instance.new("UICorner")
     stCorner.CornerRadius = UDim.new(0, 999)
     stCorner.Parent = sliderTrack
 
-    -- Slider fill
     local sliderFill = Instance.new("Frame")
     sliderFill.Size = UDim2.new(0.5, 0, 1, 0)
-    sliderFill.BackgroundColor3 = Accent1
+    sliderFill.BackgroundColor3 = Accent
     sliderFill.BackgroundTransparency = 0.2
     sliderFill.BorderSizePixel = 0
     sliderFill.Parent = sliderTrack
@@ -879,22 +665,19 @@ local function createDawnHubGUI()
     sfCorner.CornerRadius = UDim.new(0, 999)
     sfCorner.Parent = sliderFill
 
-    -- Slider handle (larger)
     local handle = Instance.new("Frame")
     handle.Size = UDim2.new(0, 18, 0, 18)
     handle.Position = UDim2.new(0.5, -9, 0.5, -9)
-    handle.BackgroundColor3 = Accent1
+    handle.BackgroundColor3 = Accent
     handle.BackgroundTransparency = 0.3
     handle.BorderSizePixel = 0
     handle.Parent = sliderTrack
     local hCorner = Instance.new("UICorner")
     hCorner.CornerRadius = UDim.new(1, 0)
     hCorner.Parent = handle
-
-    -- Handle stroke
     local handleStroke = Instance.new("UIStroke")
     handleStroke.Thickness = 2
-    handleStroke.Color = Color3.new(1, 1, 1)
+    handleStroke.Color = Color3.new(1,1,1)
     handleStroke.Parent = handle
 
     local dragging = false
@@ -907,7 +690,7 @@ local function createDawnHubGUI()
         local force = relX * 90000000
         if force < 1000000 then force = 1000000 end
         CONFIG.FLING_FORCE = force
-        forceValue.Text = string.format("%.1e", force)
+        forceValueLabel.Text = string.format("%.1e", force)
     end
 
     sliderTrack.InputBegan:Connect(function(input)
@@ -929,14 +712,17 @@ local function createDawnHubGUI()
         end
     end)
 
-    -- === SETTINGS TAB ===
-    local settingsPanel = Instance.new("Frame")
-    settingsPanel.Size = UDim2.new(1, 0, 1, 0)
-    settingsPanel.BackgroundTransparency = 1
-    settingsPanel.Parent = content
-    settingsPanel.Visible = false
-
-    local settingsCard = createCard(settingsPanel, pad, row1Y, 2*cardWidth + gap, cardHeight + 50, "Preferences")
+    -- Settings toggles
+    local settingsHeader = Instance.new("TextLabel")
+    settingsHeader.Size = UDim2.new(1, -pad*2, 0, 24)
+    settingsHeader.Position = UDim2.new(0, pad, 0, pad + 230)
+    settingsHeader.BackgroundTransparency = 1
+    settingsHeader.Text = "SETTINGS"
+    settingsHeader.TextColor3 = Color3.fromRGB(110,110,121)
+    settingsHeader.TextSize = 14
+    settingsHeader.Font = Enum.Font.GothamBold
+    settingsHeader.TextXAlignment = Enum.TextXAlignment.Left
+    settingsHeader.Parent = contentContainer
 
     local toggleData = {
         {label = "ANNOUNCEMENTS", var = "ANNOUNCEMENTS", default = true},
@@ -947,51 +733,66 @@ local function createDawnHubGUI()
 
     for i, data in ipairs(toggleData) do
         local row = Instance.new("Frame")
-        row.Size = UDim2.new(1, -32, 0, 24)
-        row.Position = UDim2.new(0, 16, 0, 34 + (i-1)*28)
+        row.Size = UDim2.new(1, -pad*2, 0, 30)
+        row.Position = UDim2.new(0, pad, 0, pad + 260 + (i-1)*36)
         row.BackgroundTransparency = 1
-        row.Parent = settingsCard
+        row.Parent = contentContainer
 
         local lbl = Instance.new("TextLabel")
         lbl.Size = UDim2.new(0.6, 0, 1, 0)
         lbl.BackgroundTransparency = 1
         lbl.Text = data.label
-        lbl.TextColor3 = Color3.fromRGB(180, 180, 190)
-        lbl.TextSize = 12
+        lbl.TextColor3 = Color3.fromRGB(180,180,190)
+        lbl.TextSize = 13
         lbl.Font = Enum.Font.GothamBold
         lbl.TextXAlignment = Enum.TextXAlignment.Left
         lbl.Parent = row
 
-        local toggle = Instance.new("TextButton")
-        toggle.Size = UDim2.new(0, 30, 0, 16)
-        toggle.Position = UDim2.new(0.7, 0, 0.5, -8)
-        toggle.Text = ""
-        toggle.BackgroundColor3 = Color3.fromRGB(30,30,40)
-        toggle.BackgroundTransparency = 0.2
-        toggle.BorderSizePixel = 0
-        toggle.Parent = row
-        local tCorner2 = Instance.new("UICorner")
-        tCorner2.CornerRadius = UDim.new(0, 999)
-        tCorner2.Parent = toggle
+        local switchBg = Instance.new("TextButton")
+        switchBg.Size = UDim2.new(0, 44, 0, 24)
+        switchBg.Position = UDim2.new(0.75, 0, 0.5, -12)
+        switchBg.Text = ""
+        switchBg.BackgroundColor3 = Color3.fromRGB(40,40,55)
+        switchBg.BackgroundTransparency = 0.2
+        switchBg.BorderSizePixel = 0
+        switchBg.Parent = row
+        local swCorner = Instance.new("UICorner")
+        swCorner.CornerRadius = UDim.new(0, 999)
+        swCorner.Parent = switchBg
 
-        local fill = Instance.new("Frame")
-        fill.Size = UDim2.new(0.5, 0, 1, 0)
-        fill.BackgroundColor3 = Accent1
-        fill.BackgroundTransparency = data.default and 0.1 or 1
-        fill.BorderSizePixel = 0
-        fill.Parent = toggle
-        local fCorner = Instance.new("UICorner")
-        fCorner.CornerRadius = UDim.new(0, 999)
-        fCorner.Parent = fill
+        local knob = Instance.new("Frame")
+        knob.Size = UDim2.new(0, 18, 0, 18)
+        knob.Position = UDim2.new(0, 2, 0.5, -9)
+        knob.BackgroundColor3 = Color3.fromRGB(255,255,255)
+        knob.BackgroundTransparency = 0.8
+        knob.BorderSizePixel = 0
+        knob.Parent = switchBg
+        local knobCorner = Instance.new("UICorner")
+        knobCorner.CornerRadius = UDim.new(1, 0)
+        knobCorner.Parent = knob
 
         local isOn = data.default
-        toggle.MouseButton1Click:Connect(function()
+        local function updateSwitch()
+            if isOn then
+                switchBg.BackgroundColor3 = Accent
+                switchBg.BackgroundTransparency = 0.2
+                knob.Position = UDim2.new(1, -20, 0.5, -9)
+                knob.BackgroundColor3 = Color3.new(1,1,1)
+                knob.BackgroundTransparency = 0
+            else
+                switchBg.BackgroundColor3 = Color3.fromRGB(40,40,55)
+                switchBg.BackgroundTransparency = 0.2
+                knob.Position = UDim2.new(0, 2, 0.5, -9)
+                knob.BackgroundColor3 = Color3.fromRGB(255,255,255)
+                knob.BackgroundTransparency = 0.8
+            end
+        end
+        updateSwitch()
+
+        switchBg.MouseButton1Click:Connect(function()
             isOn = not isOn
-            local target = isOn and 0.1 or 1
-            TweenService:Create(fill, TweenInfo.new(0.2, Enum.EasingStyle.Quad), {
-                BackgroundTransparency = target
-            }):Play()
             CONFIG[data.var] = isOn
+            updateSwitch()
             if data.var == "ANNOUNCEMENTS" and isActive then
                 if isOn then startAnnounceLoop() else
                     if announcementConnection then announcementConnection:Disconnect(); announcementConnection = nil end
@@ -1000,86 +801,37 @@ local function createDawnHubGUI()
         end)
     end
 
-    -- CLEAR BLACKLIST button
-    local clearRow = Instance.new("Frame")
-    clearRow.Size = UDim2.new(1, -32, 0, 30)
-    clearRow.Position = UDim2.new(0, 16, 0, 34 + #toggleData*28 + 8)
-    clearRow.BackgroundTransparency = 1
-    clearRow.Parent = settingsCard
-
+    -- Clear blacklist button
     local clearBtn = Instance.new("TextButton")
-    clearBtn.Size = UDim2.new(0.4, 0, 1, 0)
-    clearBtn.Position = UDim2.new(0, 0, 0, 0)
+    clearBtn.Size = UDim2.new(0.4, 0, 0, 28)
+    clearBtn.Position = UDim2.new(0.3, 0, 0, pad + 260 + 4*36 + 10)
     clearBtn.Text = "CLEAR BLACKLIST"
     clearBtn.TextColor3 = Color3.fromRGB(255,255,255)
-    clearBtn.BackgroundColor3 = Accent1
+    clearBtn.BackgroundColor3 = Accent
     clearBtn.BackgroundTransparency = 0.3
     clearBtn.TextSize = 12
     clearBtn.Font = Enum.Font.GothamBold
     clearBtn.BorderSizePixel = 0
-    clearBtn.Parent = clearRow
+    clearBtn.Parent = contentContainer
     local clearCorner = Instance.new("UICorner")
     clearCorner.CornerRadius = UDim.new(0, 8)
     clearCorner.Parent = clearBtn
     clearBtn.MouseButton1Click:Connect(clearBlacklist)
 
-    -- === TAB SWITCHING ===
-    local function switchTab(tabId)
-        for id, btnFrame in pairs(tabButtons) do
-            local active = (id == tabId)
-            local glow = nil
-            for _, child in ipairs(btnFrame:GetChildren()) do
-                if child:IsA("Frame") and child ~= btnFrame:FindFirstChildOfClass("TextLabel") and child.Size == UDim2.new(1, 0, 1, 0) then
-                    glow = child
-                end
-            end
-            if glow then glow.Visible = active end
-            local icon = nil
-            for _, child in ipairs(btnFrame:GetChildren()) do
-                if child:IsA("Frame") and child.Size == UDim2.new(0, 10, 0, 10) then
-                    icon = child
-                end
-            end
-            if icon then
-                icon.BackgroundColor3 = active and Accent1 or Color3.fromRGB(107, 107, 117)
-            end
-            local label = btnFrame:FindFirstChildOfClass("TextLabel")
-            if label then
-                label.TextColor3 = active and Color3.fromRGB(255,255,255) or Color3.fromRGB(123,123,135)
-            end
-            if active then
-                TweenService:Create(indicator, TweenInfo.new(0.2), {
-                    Position = UDim2.new(0, 0, 0, (id == "main") and 16 or 78)
-                }):Play()
-            end
-        end
-        mainPanel.Visible = (tabId == "main")
-        settingsPanel.Visible = (tabId == "settings")
-    end
-
-    for id, btnFrame in pairs(tabButtons) do
-        btnFrame.MouseButton1Click:Connect(function()
-            switchTab(id)
-        end)
-    end
-    switchTab("main")
-
-    -- === START/STOP LOGIC ===
-    toggleBtn.MouseButton1Click:Connect(function()
+    -- START/STOP logic
+    startBtn.MouseButton1Click:Connect(function()
         if isActive then
             stopSystem()
-            toggleBtn.Text = "START"
-            dot.BackgroundColor3 = Color3.fromRGB(255,80,80)
-            dotGlow.BackgroundColor3 = Color3.fromRGB(255,80,80)
-            statLabel.Text = "OFFLINE"
-            statLabel.TextColor3 = Color3.fromRGB(180,180,190)
+            startBtn.Text = "START"
+            statusDot.BackgroundColor3 = Color3.fromRGB(255,80,80)
+            statusLabel.Text = "OFFLINE"
+            statusLabel.TextColor3 = Color3.fromRGB(180,180,190)
         else
             startSystem()
-            toggleBtn.Text = "STOP"
-            dot.BackgroundColor3 = Color3.fromRGB(100,255,100)
-            dotGlow.BackgroundColor3 = Color3.fromRGB(100,255,100)
-            statLabel.Text = "ONLINE"
-            statLabel.TextColor3 = Color3.fromRGB(100,255,100)
+            startBtn.Text = "STOP"
+            statusDot.BackgroundColor3 = Color3.fromRGB(100,255,100)
+            statusLabel.Text = "ONLINE"
+            statusLabel.TextColor3 = Color3.fromRGB(100,255,100)
         end
         updateBlacklistCounter()
     end)
@@ -1091,21 +843,49 @@ local function createDawnHubGUI()
         savePosition()
         startAnnounceLoop()
         startFlingLoop()
-        toggleBtn.Text = "STOP"
-        dot.BackgroundColor3 = Color3.fromRGB(100,255,100)
-        dotGlow.BackgroundColor3 = Color3.fromRGB(100,255,100)
-        statLabel.Text = "ONLINE"
-        statLabel.TextColor3 = Color3.fromRGB(100,255,100)
+        startBtn.Text = "STOP"
+        statusDot.BackgroundColor3 = Color3.fromRGB(100,255,100)
+        statusLabel.Text = "ONLINE"
+        statusLabel.TextColor3 = Color3.fromRGB(100,255,100)
         updateBlacklistCounter()
     end
 
     updateBlacklistCounter()
+
+    -- ===== MINIMIZE FUNCTION (smooth shrink to title) =====
+    local function toggleMinimize()
+        isMinimized = not isMinimized
+        local targetSize = isMinimized and minimizedSize or fullSize
+        -- Center the window on screen
+        local centerOffset = isMinimized and -70 or -210  -- half of width
+        local verticalOffset = isMinimized and -20 or -260 -- half of height
+        local targetPos = UDim2.new(0.5, centerOffset, 0.5, verticalOffset)
+
+        if isMinimized then
+            -- Hide content first, then shrink
+            contentContainer.Visible = false
+            TweenService:Create(window, TweenInfo.new(0.35, Enum.EasingStyle.Quad, Enum.EasingDirection.InOut), {
+                Size = targetSize,
+                Position = targetPos
+            }):Play()
+            minBtn.Text = "+"
+        else
+            -- Expand first, then show content
+            TweenService:Create(window, TweenInfo.new(0.35, Enum.EasingStyle.Quad, Enum.EasingDirection.InOut), {
+                Size = targetSize,
+                Position = targetPos
+            }):Play()
+            task.wait(0.35)  -- wait for animation to finish
+            contentContainer.Visible = true
+            minBtn.Text = "−"
+        end
+    end
+    minBtn.MouseButton1Click:Connect(toggleMinimize)
+
     return gui
 end
 
--- ============================================================
--- INIT
--- ============================================================
+-- ===== INIT =====
 spawn(function()
     task.wait(2)
     checkBlacklistAndFriends()
