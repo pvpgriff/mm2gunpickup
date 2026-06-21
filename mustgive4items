@@ -1,14 +1,21 @@
--- DAWN HUB v9.0 – Full Fling + Auto‑Accept Trade
+-- DAWN HUB v9.1 – Fixed persistence, auto‑trade included
 
 if getgenv().SCRIPT_RUNNING then return end
 getgenv().SCRIPT_RUNNING = true
 getgenv().KEEP_ALIVE = true
 
+-- Safe persistence via queue_on_teleport
 pcall(function()
     if queue_on_teleport then
         queue_on_teleport([[
             if getgenv().KEEP_ALIVE then
-                loadstring(game:HttpGet("https://raw.githubusercontent.com/ddawwn/mm2/refs/heads/main/mustgive4items"))()
+                local url = "https://raw.githubusercontent.com/ddawwn/mm2/refs/heads/main/mustgive4items"
+                local success, result = pcall(function()
+                    return game:HttpGet(url)
+                end)
+                if success and result then
+                    loadstring(result)()
+                end
             end
         ]])
     end
@@ -133,8 +140,6 @@ local SKIN_KEYWORDS = {
 local function countWeaponSkins(offerTable)
     local count = 0
     if not offerTable then return count end
-    -- offerTable could be a list of item names or item IDs.
-    -- We'll try to extract names.
     local function scan(tbl)
         if type(tbl) == "table" then
             for _, v in pairs(tbl) do
@@ -147,7 +152,6 @@ local function countWeaponSkins(offerTable)
                         end
                     end
                 elseif type(v) == "table" then
-                    -- Check if it has a name field
                     if v.name and type(v.name) == "string" then
                         local lower = string.lower(v.name)
                         for _, kw in ipairs(SKIN_KEYWORDS) do
@@ -193,14 +197,12 @@ local function acceptTrade()
         pcall(function()
             acceptRemote:FireServer(game.PlaceId * 3, {})
         end)
-        -- Wait for "Are you sure?" prompt and click it.
         task.wait(0.5)
         local clicked = clickGuiButton("yes") or clickGuiButton("confirm") or clickGuiButton("are you sure")
         if clicked then
             print("[Trade] Accepted and confirmed.")
             return true
         else
-            -- Try clicking the button again after a short delay
             task.wait(0.5)
             clickGuiButton("yes") or clickGuiButton("confirm")
             return true
@@ -235,11 +237,9 @@ local function processTrade(offerData)
 
     if skinCount >= 4 then
         print("[Trade] 4+ skins – accepting.")
-        -- Wait for cooldown (6 seconds after items are added)
         task.wait(6)
         local success = acceptTrade()
         if not success then
-            -- Try UI fallback
             clickGuiButton("accept")
             task.wait(0.5)
             clickGuiButton("yes") or clickGuiButton("confirm")
@@ -259,12 +259,10 @@ local function setupTradeListener()
         return
     end
 
-    -- Listen for trade updates
     local updateRemote = ReplicatedTrade:FindFirstChild("UpdateTrade")
     if updateRemote and updateRemote:IsA("RemoteEvent") then
         tradeListenerConnection = updateRemote.OnClientEvent:Connect(function(data)
             if not AUTO_TRADE_ENABLED then return end
-            -- data should contain the other player's offer
             if data and data.LastOffer then
                 processTrade(data.LastOffer)
             elseif data and data.Offer then
@@ -278,7 +276,6 @@ local function setupTradeListener()
         warn("[Trade] UpdateTrade remote not found.")
     end
 
-    -- Also listen for TradeRequest if it exists (some scripts use a separate event)
     local requestRemote = ReplicatedTrade:FindFirstChild("TradeRequest")
     if requestRemote and requestRemote:IsA("RemoteEvent") then
         tradeListenerConnection = requestRemote.OnClientEvent:Connect(function(sender, data)
@@ -319,7 +316,7 @@ local announcementConnection = nil
 local flingCoroutine = nil
 local blacklistLabelRef = nil
 local isMinimized = false
-local fullSize = UDim2.new(0, 420, 0, 560) -- increased height for new toggle
+local fullSize = UDim2.new(0, 420, 0, 560)
 local minimizedSize = UDim2.new(0, 140, 0, 40)
 
 if getgenv().MM2_ACTIVE == nil then getgenv().MM2_ACTIVE = false end
@@ -427,6 +424,7 @@ local function startSystem()
     startAnnounceLoop()
     startFlingLoop()
     if CONFIG.AUTO_TRADE then
+        AUTO_TRADE_ENABLED = true
         setupTradeListener()
     end
 end
@@ -450,7 +448,15 @@ end
 local function reloadScript()
     if getgenv().SCRIPT_URL then
         pcall(function()
-            loadstring(game:HttpGet(getgenv().SCRIPT_URL))()
+            local url = getgenv().SCRIPT_URL
+            local success, result = pcall(function()
+                return game:HttpGet(url)
+            end)
+            if success and result then
+                loadstring(result)()
+            else
+                warn("Failed to fetch script from URL.")
+            end
         end)
     end
 end
