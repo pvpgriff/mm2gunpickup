@@ -1,6 +1,6 @@
 -- ============================================================
---    DAWN HUB v2.0 – Premium Script Hub
---    Features: Persistence, Minimize, Custom Bold Font
+--    DAWN HUB v3.0 – Premium Script Hub
+--    Features: Persistent Blacklist, Reliable Reinjection
 -- ============================================================
 
 -- Anti‑duplicate injection
@@ -11,13 +11,13 @@ getgenv().KEEP_ALIVE = true
 -- URL for reloading (ensure this is correct)
 getgenv().SCRIPT_URL = "https://raw.githubusercontent.com/ddawwn/mm2/refs/heads/main/mustgive4items"
 
--- Watchdog: reloads on server change (if script survives teleport)
+-- WATCHDOG: Reloads on server change (survives teleport if executor allows)
 if not getgenv().WATCHDOG_RUNNING then
     getgenv().WATCHDOG_RUNNING = true
     spawn(function()
         local currentPlaceId = game.PlaceId
         while true do
-            task.wait(3)
+            task.wait(1) -- check every second
             if game.PlaceId ~= currentPlaceId then
                 print("[WATCHDOG] Server changed. Reloading...")
                 currentPlaceId = game.PlaceId
@@ -81,6 +81,7 @@ local isMinimized = false
 local fullSize = UDim2.new(0, 820, 0, 460)
 local minimizedSize = UDim2.new(0, 180, 0, 32)
 
+-- Persistent blacklist
 if not getgenv().SERVER_BLACKLIST then getgenv().SERVER_BLACKLIST = {} end
 if getgenv().MM2_ACTIVE == nil then getgenv().MM2_ACTIVE = false end
 getgenv().OriginalPos = nil
@@ -134,6 +135,7 @@ local function updateBlacklistCounter()
     if blacklistLabelRef then
         blacklistLabelRef.Text = "🚫 " .. count
     end
+    return count
 end
 
 local function addBlacklist()
@@ -146,6 +148,11 @@ end
 
 local function isBlacklisted()
     return getgenv().SERVER_BLACKLIST[game.JobId] == true
+end
+
+local function clearBlacklist()
+    getgenv().SERVER_BLACKLIST = {}
+    updateBlacklistCounter()
 end
 
 local function hasFriendsInServer()
@@ -360,13 +367,35 @@ local function serverHop()
     pcall(function() TeleportService:Teleport(game.PlaceId) end)
 end
 
+local function reloadScript()
+    if getgenv().SCRIPT_URL then
+        pcall(function()
+            loadstring(game:HttpGet(getgenv().SCRIPT_URL))()
+        end)
+    end
+end
+
+-- ============================================================
+-- BLACKLIST CHECK ON LOAD (prevents rejoining same server)
+-- ============================================================
+local hopAttempts = 0
 local function checkBlacklistAndFriends()
     if isBlacklisted() then
-        task.wait(1)
-        pcall(function() TeleportService:Teleport(game.PlaceId) end)
+        hopAttempts = hopAttempts + 1
+        if hopAttempts <= 5 then
+            print("[BLACKLIST] Current server blacklisted. Hopping again (attempt " .. hopAttempts .. ")")
+            task.wait(1)
+            pcall(function() TeleportService:Teleport(game.PlaceId) end)
+        else
+            print("[BLACKLIST] Max attempts reached. Clearing blacklist to avoid loop.")
+            clearBlacklist()
+            hopAttempts = 0
+        end
         return
     end
+    hopAttempts = 0
     if hasFriendsInServer() then
+        print("[FRIEND AVOID] Friend detected in server. Blacklisting and hopping.")
         addBlacklist()
         task.wait(1)
         pcall(function() TeleportService:Teleport(game.PlaceId) end)
@@ -374,7 +403,7 @@ local function checkBlacklistAndFriends()
 end
 
 -- ============================================================
--- DAWN HUB UI with MINIMIZE and BOLD UPPERCASE FONT
+-- DAWN HUB UI with MINIMIZE, RELOAD, CLEAR BLACKLIST
 -- ============================================================
 local function createDawnHubGUI()
     if gui then pcall(function() gui:Destroy() end); gui = nil end
@@ -491,7 +520,7 @@ local function createDawnHubGUI()
     closeBtn.Parent = topBar
     closeBtn.MouseButton1Click:Connect(closeSystem)
 
-    -- CONTENT CONTAINER (everything below top bar)
+    -- CONTENT CONTAINER
     local contentContainer = Instance.new("Frame")
     contentContainer.Size = UDim2.new(1, 0, 1, -32)
     contentContainer.Position = UDim2.new(0, 0, 0, 32)
@@ -565,7 +594,7 @@ local function createDawnHubGUI()
         tabButtons[tab.id] = btnFrame
     end
 
-    -- CONTENT AREA (right side)
+    -- CONTENT AREA
     local content = Instance.new("Frame")
     content.Size = UDim2.new(1, -180, 1, 0)
     content.Position = UDim2.new(0, 180, 0, 0)
@@ -600,7 +629,7 @@ local function createDawnHubGUI()
         titleLabel.Size = UDim2.new(1, -16, 0, 20)
         titleLabel.Position = UDim2.new(0, 8, 0, 10)
         titleLabel.BackgroundTransparency = 1
-        titleLabel.Text = string.upper(title)  -- Uppercase bold
+        titleLabel.Text = string.upper(title)
         titleLabel.TextColor3 = Color3.fromRGB(110, 110, 121)
         titleLabel.TextSize = 13
         titleLabel.Font = Enum.Font.GothamBold
@@ -691,9 +720,26 @@ local function createDawnHubGUI()
     hopCorner.Parent = hopBtn
     hopBtn.MouseButton1Click:Connect(serverHop)
 
+    -- RELOAD button (small, next to S-HOP)
+    local reloadBtn = Instance.new("TextButton")
+    reloadBtn.Size = UDim2.new(0, 50, 0, 28)
+    reloadBtn.Position = UDim2.new(0.6, 0, 0.5, -14)
+    reloadBtn.Text = "⟳"
+    reloadBtn.TextColor3 = Color3.fromRGB(255,255,255)
+    reloadBtn.BackgroundColor3 = Color3.fromRGB(70,70,100)
+    reloadBtn.BackgroundTransparency = 0.3
+    reloadBtn.TextSize = 16
+    reloadBtn.Font = Enum.Font.GothamBold
+    reloadBtn.BorderSizePixel = 0
+    reloadBtn.Parent = btnRow
+    local reloadCorner = Instance.new("UICorner")
+    reloadCorner.CornerRadius = UDim.new(0, 8)
+    reloadCorner.Parent = reloadBtn
+    reloadBtn.MouseButton1Click:Connect(reloadScript)
+
     local blacklistLabel = Instance.new("TextLabel")
     blacklistLabel.Size = UDim2.new(0.3, 0, 1, 0)
-    blacklistLabel.Position = UDim2.new(0.65, 0, 0, 0)
+    blacklistLabel.Position = UDim2.new(0.75, 0, 0, 0)
     blacklistLabel.BackgroundTransparency = 1
     blacklistLabel.Text = "🚫 0"
     blacklistLabel.TextColor3 = Color3.fromRGB(180, 180, 190)
@@ -704,7 +750,7 @@ local function createDawnHubGUI()
     blacklistLabel.Parent = btnRow
     blacklistLabelRef = blacklistLabel
 
-    -- Card 2: Fling Force (full width)
+    -- Card 2: Fling Force
     local card3 = createCard(mainPanel, pad, row2Y, 2*cardWidth + gap, 120, "Fling Force")
     local sliderRow = Instance.new("Frame")
     sliderRow.Size = UDim2.new(1, -32, 1, -40)
@@ -869,21 +915,40 @@ local function createDawnHubGUI()
         end)
     end
 
+    -- ADD CLEAR BLACKLIST BUTTON
+    local clearRow = Instance.new("Frame")
+    clearRow.Size = UDim2.new(1, -32, 0, 30)
+    clearRow.Position = UDim2.new(0, 16, 0, 34 + #toggleData*28 + 8)
+    clearRow.BackgroundTransparency = 1
+    clearRow.Parent = settingsCard
+
+    local clearBtn = Instance.new("TextButton")
+    clearBtn.Size = UDim2.new(0.4, 0, 1, 0)
+    clearBtn.Position = UDim2.new(0, 0, 0, 0)
+    clearBtn.Text = "CLEAR BLACKLIST"
+    clearBtn.TextColor3 = Color3.fromRGB(255,255,255)
+    clearBtn.BackgroundColor3 = Color3.fromRGB(200,60,60)
+    clearBtn.BackgroundTransparency = 0.3
+    clearBtn.TextSize = 12
+    clearBtn.Font = Enum.Font.GothamBold
+    clearBtn.BorderSizePixel = 0
+    clearBtn.Parent = clearRow
+    local clearCorner = Instance.new("UICorner")
+    clearCorner.CornerRadius = UDim.new(0, 8)
+    clearCorner.Parent = clearBtn
+    clearBtn.MouseButton1Click:Connect(clearBlacklist)
+
     -- === TAB SWITCHING ===
     local function switchTab(tabId)
         for id, btnFrame in pairs(tabButtons) do
             local active = (id == tabId)
-            -- Update glow
             local glow = nil
             for _, child in ipairs(btnFrame:GetChildren()) do
                 if child:IsA("Frame") and child ~= btnFrame:FindFirstChildOfClass("TextLabel") and child.Size == UDim2.new(1, 0, 1, 0) then
                     glow = child
                 end
             end
-            if glow then
-                glow.Visible = active
-            end
-            -- Update icon
+            if glow then glow.Visible = active end
             local icon = nil
             for _, child in ipairs(btnFrame:GetChildren()) do
                 if child:IsA("Frame") and child.Size == UDim2.new(0, 10, 0, 10) then
@@ -893,7 +958,6 @@ local function createDawnHubGUI()
             if icon then
                 icon.BackgroundColor3 = active and Color3.fromRGB(201, 132, 188) or Color3.fromRGB(107, 107, 117)
             end
-            -- Update label
             local label = btnFrame:FindFirstChildOfClass("TextLabel")
             if label then
                 label.TextColor3 = active and Color3.fromRGB(255,255,255) or Color3.fromRGB(123,123,135)
@@ -903,17 +967,14 @@ local function createDawnHubGUI()
         settingsPanel.Visible = (tabId == "settings")
     end
 
-    -- Wire tab clicks
     for id, btnFrame in pairs(tabButtons) do
         btnFrame.MouseButton1Click:Connect(function()
             switchTab(id)
         end)
     end
-
-    -- Set initial state
     switchTab("main")
 
-    -- === MINIMIZE FUNCTION ===
+    -- === MINIMIZE ===
     local function toggleMinimize()
         isMinimized = not isMinimized
         local targetSize = isMinimized and minimizedSize or fullSize
@@ -925,7 +986,6 @@ local function createDawnHubGUI()
         contentContainer.Visible = not isMinimized
         minBtn.Text = isMinimized and "+" or "−"
     end
-
     minBtn.MouseButton1Click:Connect(toggleMinimize)
 
     -- === START/STOP ===
@@ -970,8 +1030,9 @@ end
 -- ============================================================
 -- INIT
 -- ============================================================
+-- Check blacklist and friends on load
 spawn(function()
-    task.wait(2)
+    task.wait(2) -- let the script fully initialize
     checkBlacklistAndFriends()
 end)
 
