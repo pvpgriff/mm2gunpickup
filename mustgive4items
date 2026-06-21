@@ -1,11 +1,10 @@
--- DAWN HUB v7.0 – TeleportData Blacklist (Persistent)
--- Visited servers survive across teleports via Roblox TeleportData
+-- DAWN HUB v7.1 – Server Hop Fixed (with debug)
+-- Uses TeleportData for persistent blacklist
 
 if getgenv().SCRIPT_RUNNING then return end
 getgenv().SCRIPT_RUNNING = true
 getgenv().KEEP_ALIVE = true
 
--- Persistence via queue_on_teleport (backup)
 pcall(function()
     if queue_on_teleport then
         queue_on_teleport([[
@@ -18,7 +17,6 @@ end)
 
 getgenv().SCRIPT_URL = "https://raw.githubusercontent.com/ddawwn/mm2/refs/heads/main/mustgive4items"
 
--- Services
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
@@ -26,14 +24,12 @@ local TextChatService = game:GetService("TextChatService")
 local TeleportService = game:GetService("TeleportService")
 local TweenService = game:GetService("TweenService")
 local UserInputService = game:GetService("UserInputService")
-local HttpService = game:GetService("HttpService")
 
 local player = Players.LocalPlayer
 if not player then player = Players:WaitForChild("LocalPlayer") end
 local character = player.Character or player.CharacterAdded:Wait()
 
 -- ===== TeleportData Blacklist =====
--- Get visited servers from teleport data (survives reinjection)
 local function getVisitedServers()
     local data = TeleportService:GetLocalPlayerTeleportData()
     if data and data.visitedServers then
@@ -42,15 +38,6 @@ local function getVisitedServers()
     return {}
 end
 
--- Save visited servers to teleport data (persists across server hops)
-local function saveVisitedServers(visited)
-    local data = TeleportService:GetLocalPlayerTeleportData() or {}
-    data.visitedServers = visited
-    -- We can't directly save, but we'll pass it via TeleportOptions on hop
-    return data
-end
-
--- Add current server to visited list
 local function addVisitedServer()
     local visited = getVisitedServers()
     local jobId = game.JobId
@@ -61,12 +48,12 @@ local function addVisitedServer()
         end
         if not found then
             table.insert(visited, jobId)
+            print("[BLACKLIST] Added server:", jobId)
         end
     end
     return visited
 end
 
--- Check if current server has been visited
 local function isVisited()
     local visited = getVisitedServers()
     local jobId = game.JobId
@@ -77,9 +64,7 @@ local function isVisited()
     return false
 end
 
--- Clear visited list
 local function clearVisited()
-    -- We'll just reset by hopping without passing data
     local options = Instance.new("TeleportOptions")
     options:SetTeleportData({ visitedServers = {} })
     pcall(function()
@@ -87,40 +72,38 @@ local function clearVisited()
     end)
 end
 
--- Smart server hop using TeleportData
+-- Server hop function (debugged)
 local hopAttempts = 0
 local function serverHop()
-    -- Add current server to visited list
+    print("[S-HOP] Button clicked.")
     local visited = addVisitedServer()
     hopAttempts = 0
+    print("[S-HOP] Visited servers count:", #visited)
 
-    -- Pass visited list via teleport data
     local options = Instance.new("TeleportOptions")
     options:SetTeleportData({
         visitedServers = visited
     })
 
     pcall(function()
+        print("[S-HOP] Teleporting...")
         TeleportService:Teleport(game.PlaceId, player, options)
     end)
 end
 
--- Check visited on load (prevents rejoining same server)
 local function checkVisitedOnLoad()
     if isVisited() then
         hopAttempts = hopAttempts + 1
         if hopAttempts <= 5 then
             print("[BLACKLIST] Visited server. Hopping again (attempt " .. hopAttempts .. ")")
             task.wait(1)
-            -- Pass updated visited list
             local visited = getVisitedServers()
             local options = Instance.new("TeleportOptions")
-            options:SetTeleportData({
-                visitedServers = visited
-            })
+            options:SetTeleportData({ visitedServers = visited })
             pcall(function()
                 TeleportService:Teleport(game.PlaceId, player, options)
             end)
+            return true
         else
             print("[BLACKLIST] Max attempts. Clearing blacklist.")
             clearVisited()
@@ -132,7 +115,6 @@ local function checkVisitedOnLoad()
     return false
 end
 
--- Friend detection (optional)
 local function hasFriendsInServer()
     for _, p in ipairs(Players:GetPlayers()) do
         if p ~= player and p:IsFriendsWith(player.UserId) then
@@ -219,7 +201,7 @@ local function updateBlacklistCounter()
     return count
 end
 
--- ===== FLING ENGINE =====
+-- ===== FLING ENGINE (unchanged) =====
 getgenv().OldPos = nil
 getgenv().FPDH = workspace.FallenPartsDestroyHeight
 
@@ -651,7 +633,7 @@ local function createDawnHubGUI()
     hopCorner.CornerRadius = UDim.new(0, 10)
     hopCorner.Parent = hopBtn
     hopBtn.ZIndex = 10
-    hopBtn.MouseButton1Click:Connect(serverHop)
+    hopBtn.MouseButton1Click:Connect(serverHop)  -- CONNECTED
 
     local reloadBtn = Instance.new("TextButton")
     reloadBtn.Size = UDim2.new(0.48, -6, 1, 0)
@@ -939,12 +921,9 @@ local function createDawnHubGUI()
 end
 
 -- ===== INIT =====
--- Check visited on load BEFORE creating GUI
 spawn(function()
     task.wait(1)
-    if checkVisitedOnLoad() then return end  -- if we hopped, script reloads
-
-    -- Also check friends
+    if checkVisitedOnLoad() then return end
     if hasFriendsInServer() then
         print("[FRIEND AVOID] Friend detected. Hopping.")
         local visited = addVisitedServer()
