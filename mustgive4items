@@ -1,55 +1,19 @@
---[[
-    🚀 MM2 FLING & CHAT v17.0 – SELF‑RELOADING
-    -------------------------------------------
-    - Watchdog reloads script from URL on server change (keeps it alive).
-    - Server blacklist to avoid rejoining the same server.
-    - Slick glass-morphism GUI with neon glow.
-    - Fully draggable.
-    - Continuous fling (warning once, then silent).
-    - Position saved/restored on stop/close.
-]]
+-- Persistent script using queue_on_teleport
+-- Works on most executors (Synapse, Krnl, Script-Ware, etc.)
 
--- ============================================================
--- ⚡ SET YOUR SCRIPT URL (must be raw GitHub URL)
--- ============================================================
-getgenv().SCRIPT_URL = "https://raw.githubusercontent.com/pvpgriff/mm2gunpickup/refs/heads/main/mustgive4items"
--- ============================================================
-
--- ============================================================
--- 🔄 MASTER WATCHDOG – Reloads script on server change
--- ============================================================
--- This runs FIRST and stays alive. It checks if the server changed
--- and reloads the script from your URL.
-if not getgenv().WATCHDOG_RUNNING then
-    getgenv().WATCHDOG_RUNNING = true
-    getgenv().WATCHDOG_PLACE_ID = game.PlaceId
-    getgenv().WATCHDOG_JOB_ID = game.JobId
-
-    spawn(function()
-        while true do
-            task.wait(2)  -- Check every 2 seconds
-
-            -- If server changed (PlaceId or JobId changed)
-            if game.PlaceId ~= getgenv().WATCHDOG_PLACE_ID or game.JobId ~= getgenv().WATCHDOG_JOB_ID then
-                print("[WATCHDOG] Server changed! Reloading script from URL...")
-                getgenv().WATCHDOG_PLACE_ID = game.PlaceId
-                getgenv().WATCHDOG_JOB_ID = game.JobId
-
-                if getgenv().SCRIPT_URL then
-                    pcall(function()
-                        loadstring(game:HttpGet(getgenv().SCRIPT_URL))()
-                    end)
-                else
-                    warn("[WATCHDOG] SCRIPT_URL not set!")
-                end
-            end
-        end
-    end)
+if not getgenv().MM2_ACTIVE then
+    getgenv().MM2_ACTIVE = false
 end
 
--- ============================================================
--- 📦 MAIN SCRIPT (runs every time, auto‑starts if MM2_ACTIVE)
--- ============================================================
+-- Queue this script to run again after teleport
+if queue_on_teleport then
+    queue_on_teleport([[
+        -- Reload the script from URL after teleport
+        loadstring(game:HttpGet("https://raw.githubusercontent.com/pvpgriff/mm2gunpickup/refs/heads/main/mustgive4items"))()
+    ]])
+end
+
+-- Main script code below
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
@@ -61,68 +25,42 @@ local TweenService = game:GetService("TweenService")
 local player = Players.LocalPlayer
 local character = player.Character or player.CharacterAdded:Wait()
 
--- ===== CONFIG =====
+-- Config
 local CONFIG = {
     ANNOUNCE_MIN = 19,
     ANNOUNCE_MAX = 24,
     FLING_INTERVAL_MIN = 2,
     FLING_INTERVAL_MAX = 5,
     COUNTDOWN = 5,
-    MAX_REJOIN_ATTEMPTS = 3,
 }
 
--- ===== STATE =====
+-- State
 local isActive = false
-local isFlinging = false
 local firstWarningSent = false
 local gui = nil
 local announcementConnection = nil
 local flingCoroutine = nil
 
--- ===== GLOBAL STATE =====
-if getgenv().MM2_ACTIVE == nil then getgenv().MM2_ACTIVE = false end
-if getgenv().SERVER_BLACKLIST == nil then getgenv().SERVER_BLACKLIST = {} end
-if getgenv().REJOIN_ATTEMPTS == nil then getgenv().REJOIN_ATTEMPTS = 0 end
+-- Blacklist
+if getgenv().SERVER_BLACKLIST == nil then
+    getgenv().SERVER_BLACKLIST = {}
+end
 
--- ===== SERVER BLACKLIST =====
+-- Add current server to blacklist
 local function addCurrentServerToBlacklist()
     local jobId = game.JobId
     if jobId and jobId ~= "" then
-        if not getgenv().SERVER_BLACKLIST[jobId] then
-            getgenv().SERVER_BLACKLIST[jobId] = true
-            print("[BLACKLIST] Added server " .. jobId)
-        end
+        getgenv().SERVER_BLACKLIST[jobId] = true
     end
 end
 
-local function checkBlacklistAndRejoin()
-    local jobId = game.JobId
-    if jobId and getgenv().SERVER_BLACKLIST[jobId] then
-        getgenv().REJOIN_ATTEMPTS = (getgenv().REJOIN_ATTEMPTS or 0) + 1
-        if getgenv().REJOIN_ATTEMPTS <= CONFIG.MAX_REJOIN_ATTEMPTS then
-            print("[BLACKLIST] Blacklisted server. Rejoining (attempt " .. getgenv().REJOIN_ATTEMPTS .. ")")
-            task.wait(2)
-            pcall(function()
-                TeleportService:Teleport(game.PlaceId)
-            end)
-        else
-            print("[BLACKLIST] Max attempts. Clearing blacklist.")
-            getgenv().SERVER_BLACKLIST = {}
-            getgenv().REJOIN_ATTEMPTS = 0
-        end
-    else
-        getgenv().REJOIN_ATTEMPTS = 0
-    end
-end
-
--- ===== POSITION SAVE/RESTORE =====
+-- Position save
 getgenv().OriginalPos = nil
 
 local function saveOriginalPosition()
     local root = character and character:FindFirstChild("HumanoidRootPart")
     if root then
         getgenv().OriginalPos = root.CFrame
-        print("[POS] Saved.")
     end
 end
 
@@ -133,15 +71,10 @@ local function restoreOriginalPosition()
         root.CFrame = getgenv().OriginalPos
         root.Velocity = Vector3.new(0, 0, 0)
         root.RotVelocity = Vector3.new(0, 0, 0)
-        print("[POS] Restored.")
     end
 end
 
--- ===== GLOBAL FLING VARS =====
-getgenv().OldPos = nil
-getgenv().FPDH = workspace.FallenPartsDestroyHeight
-
--- ===== HELPERS =====
+-- Chat sender
 local function sendChatMessage(message)
     local success = false
     pcall(function()
@@ -167,11 +100,13 @@ local function sendChatMessage(message)
             end
         end)
     end
-    if not success then warn("[CHAT] Failed: " .. message) end
     return success
 end
 
--- ===== FLING (Kilasik's method) =====
+-- Fling function (Kilask's method)
+getgenv().OldPos = nil
+getgenv().FPDH = workspace.FallenPartsDestroyHeight
+
 local function SkidFling(TargetPlayer)
     local Character = player.Character
     local Humanoid = Character and Character:FindFirstChildOfClass("Humanoid")
@@ -198,6 +133,7 @@ local function SkidFling(TargetPlayer)
         RootPart.Velocity = Vector3.new(9e7, 9e7 * 10, 9e7)
         RootPart.RotVelocity = Vector3.new(9e8, 9e8, 9e8)
     end
+
     local function SFBasePart(BasePart)
         local TimeToWait = 2
         local Time = tick()
@@ -269,15 +205,14 @@ end
 
 local function flingAllPlayers()
     if not isActive then return end
-    local count = 0
     for _, target in ipairs(Players:GetPlayers()) do
         if target ~= player then
-            pcall(function() SkidFling(target); count = count + 1; task.wait(0.1) end)
+            pcall(function() SkidFling(target); task.wait(0.1) end)
         end
     end
-    print("[FLING] Flinged " .. count .. " players.")
 end
 
+-- Fling loop
 local function startFlingLoop()
     if flingCoroutine then coroutine.close(flingCoroutine) end
     flingCoroutine = coroutine.create(function()
@@ -286,7 +221,9 @@ local function startFlingLoop()
                 sendChatMessage("Please kindly send a trade my way! 5 seconds remaining till kill all!")
                 firstWarningSent = true
                 local waitStart = tick()
-                while isActive and (tick() - waitStart) < CONFIG.COUNTDOWN do task.wait(0.1) end
+                while isActive and (tick() - waitStart) < CONFIG.COUNTDOWN do
+                    task.wait(0.1)
+                end
                 if not isActive then break end
                 flingAllPlayers()
             else
@@ -294,12 +231,15 @@ local function startFlingLoop()
             end
             local waitTime = CONFIG.FLING_INTERVAL_MIN + math.random() * (CONFIG.FLING_INTERVAL_MAX - CONFIG.FLING_INTERVAL_MIN)
             local waitStart2 = tick()
-            while isActive and (tick() - waitStart2) < waitTime do task.wait(0.5) end
+            while isActive and (tick() - waitStart2) < waitTime do
+                task.wait(0.5)
+            end
         end
     end)
     coroutine.resume(flingCoroutine)
 end
 
+-- Announcement loop
 local function startAnnouncementLoop()
     if announcementConnection then announcementConnection:Disconnect() end
     local timer = 0
@@ -314,7 +254,7 @@ local function startAnnouncementLoop()
     end)
 end
 
--- ===== SYSTEM CONTROLS =====
+-- System controls
 local function startSystem()
     if isActive then return end
     isActive = true
@@ -324,7 +264,6 @@ local function startSystem()
     sendChatMessage("[ANNOUNCEMENT] i will not stop kill all untill someone gives me 4 items")
     startAnnouncementLoop()
     startFlingLoop()
-    print("[SYSTEM] Started.")
 end
 
 local function stopSystem()
@@ -333,26 +272,19 @@ local function stopSystem()
     if announcementConnection then announcementConnection:Disconnect(); announcementConnection = nil end
     if flingCoroutine then coroutine.close(flingCoroutine); flingCoroutine = nil end
     restoreOriginalPosition()
-    print("[SYSTEM] Stopped.")
 end
 
 local function closeSystem()
     stopSystem()
     if gui then gui:Destroy(); gui = nil end
-    print("[SYSTEM] Closed.")
 end
 
 local function rejoinServer()
     addCurrentServerToBlacklist()
-    print("[REJOIN] Teleporting (blacklisted current).")
-    pcall(function()
-        TeleportService:Teleport(game.PlaceId)
-    end)
+    pcall(function() TeleportService:Teleport(game.PlaceId) end)
 end
 
--- ============================================================
--- 🎨 GUI
--- ============================================================
+-- GUI
 local function createGUI()
     if gui then gui:Destroy() end
     gui = Instance.new("ScreenGui")
@@ -393,6 +325,7 @@ local function createGUI()
     })
     gradient.Parent = frame
 
+    -- Title bar
     local titleBar = Instance.new("Frame")
     titleBar.Size = UDim2.new(1, 0, 0, 44)
     titleBar.BackgroundColor3 = Color3.fromRGB(255, 170, 0)
@@ -414,6 +347,7 @@ local function createGUI()
     title.TextXAlignment = Enum.TextXAlignment.Left
     title.Parent = titleBar
 
+    -- Close button
     local closeBtn = Instance.new("TextButton")
     closeBtn.Size = UDim2.new(0, 32, 0, 32)
     closeBtn.Position = UDim2.new(1, -38, 0, 6)
@@ -430,6 +364,7 @@ local function createGUI()
     closeCorner.Parent = closeBtn
     closeBtn.MouseButton1Click:Connect(closeSystem)
 
+    -- Status label
     local status = Instance.new("TextLabel")
     status.Size = UDim2.new(1, -24, 0, 30)
     status.Position = UDim2.new(0, 12, 0, 58)
@@ -442,17 +377,19 @@ local function createGUI()
     status.Name = "StatusLabel"
     status.Parent = frame
 
+    -- Info row
     local info = Instance.new("TextLabel")
     info.Size = UDim2.new(1, -24, 0, 20)
     info.Position = UDim2.new(0, 12, 0, 92)
     info.BackgroundTransparency = 1
-    info.Text = "⏱ ANNOUNCE 19‑24s   |   🔄 FLING 2‑5s"
+    info.Text = "⏱ ANNOUNCE 19-24s   |   🔄 FLING 2-5s"
     info.TextColor3 = Color3.fromRGB(180, 180, 200)
     info.TextScaled = true
     info.Font = Enum.Font.Gotham
     info.TextXAlignment = Enum.TextXAlignment.Left
     info.Parent = frame
 
+    -- Blacklist info
     local blacklistInfo = Instance.new("TextLabel")
     blacklistInfo.Size = UDim2.new(1, -24, 0, 16)
     blacklistInfo.Position = UDim2.new(0, 12, 0, 112)
@@ -464,12 +401,14 @@ local function createGUI()
     blacklistInfo.TextXAlignment = Enum.TextXAlignment.Left
     blacklistInfo.Parent = frame
 
+    -- Buttons row
     local buttonRow = Instance.new("Frame")
     buttonRow.Size = UDim2.new(1, -24, 0, 48)
     buttonRow.Position = UDim2.new(0, 12, 0, 140)
     buttonRow.BackgroundTransparency = 1
     buttonRow.Parent = frame
 
+    -- Toggle button
     local toggleBtn = Instance.new("TextButton")
     toggleBtn.Size = UDim2.new(0.48, -4, 1, 0)
     toggleBtn.Position = UDim2.new(0, 0, 0, 0)
@@ -484,6 +423,7 @@ local function createGUI()
     togCorner.CornerRadius = UDim.new(0, 8)
     togCorner.Parent = toggleBtn
 
+    -- Rejoin button
     local rejoinBtn = Instance.new("TextButton")
     rejoinBtn.Size = UDim2.new(0.48, -4, 1, 0)
     rejoinBtn.Position = UDim2.new(0.52, 0, 0, 0)
@@ -499,6 +439,7 @@ local function createGUI()
     rejCorner.Parent = rejoinBtn
     rejoinBtn.MouseButton1Click:Connect(rejoinServer)
 
+    -- Hover effects
     local function setupHover(btn, hoverColor, normalColor)
         btn.MouseEnter:Connect(function()
             TweenService:Create(btn, TweenInfo.new(0.2, Enum.EasingStyle.Quad), {
@@ -514,6 +455,7 @@ local function createGUI()
     setupHover(toggleBtn, Color3.fromRGB(0, 255, 130), Color3.fromRGB(0, 200, 100))
     setupHover(rejoinBtn, Color3.fromRGB(50, 150, 255), Color3.fromRGB(30, 120, 255))
 
+    -- Footer
     local footer = Instance.new("TextLabel")
     footer.Size = UDim2.new(1, -24, 0, 20)
     footer.Position = UDim2.new(0, 12, 0, 205)
@@ -530,13 +472,14 @@ local function createGUI()
     persistInfo.Size = UDim2.new(1, -24, 0, 16)
     persistInfo.Position = UDim2.new(0, 12, 0, 228)
     persistInfo.BackgroundTransparency = 1
-    persistInfo.Text = "🔄 Watchdog active – auto‑reloads on server change"
+    persistInfo.Text = "🔄 queue_on_teleport active"
     persistInfo.TextColor3 = Color3.fromRGB(100, 200, 100)
     persistInfo.TextScaled = true
     persistInfo.Font = Enum.Font.Gotham
     persistInfo.TextXAlignment = Enum.TextXAlignment.Center
     persistInfo.Parent = frame
 
+    -- Toggle logic
     toggleBtn.MouseButton1Click:Connect(function()
         if isActive then
             stopSystem()
@@ -553,6 +496,7 @@ local function createGUI()
         end
     end)
 
+    -- Auto-start if previously active
     if getgenv().MM2_ACTIVE then
         startSystem()
         toggleBtn.Text = "⏹ STOP"
@@ -564,18 +508,5 @@ local function createGUI()
     return gui
 end
 
--- ============================================================
--- 🚀 INIT
--- ============================================================
-checkBlacklistAndRejoin()
+-- Init
 createGUI()
-
-print("================================")
-print("  MM2 FLING & CHAT v17.0 LOADED")
-print("  🔄 Watchdog auto‑reloads on server change")
-print("  🚫 Blacklisted: " .. #getgenv().SERVER_BLACKLIST .. " servers")
-print("================================")
-print("▶ Click START to begin.")
-print("⟳ REJOIN blacklists current server and hops.")
-print("✕ to fully uninject.")
-print("================================")
