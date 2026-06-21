@@ -1,9 +1,10 @@
 --[[
-    SCRIPT: MM2 Trade Automation System v4.0
+    SCRIPT: MM2 Trade Automation v5.0
+    FIXES:
+      - Chat messages now send to ALL players (server‑side methods only).
+      - Much longer intervals to avoid spamming (announce every 20‑40s, fling every 25‑35s).
+      - Added global chat cooldown (5s between any message).
     LANGUAGE: English
-    PURPOSE: Fully functional – no placeholders, with debug logs.
-    FEATURES: GUI, chat announcements, fling, auto‑accept trades (4+ skins), server hop, close button.
-    WARNING: Violates Roblox ToS – use at your own risk.
 ]]
 
 -- ============================================
@@ -15,24 +16,25 @@ local TeleportService = game:GetService("TeleportService")
 local RunService = game:GetService("RunService")
 local Debris = game:GetService("Debris")
 local TextChatService = game:GetService("TextChatService")
-local StarterGui = game:GetService("StarterGui")
 
 local player = Players.LocalPlayer
 local character = player.Character or player.CharacterAdded:Wait()
 local humanoidRootPart = character:WaitForChild("HumanoidRootPart")
 
 -- ============================================
--- CONFIGURATION
+-- CONFIG
 -- ============================================
 local CONFIG = {
     REQUIRED_SKINS = 4,
     TRADE_COOLDOWN = 6,
-    ANNOUNCE_MIN = 5,
-    ANNOUNCE_MAX = 8,
-    FLING_INTERVAL = 7,
+    ANNOUNCE_MIN = 20,          -- seconds between announcements
+    ANNOUNCE_MAX = 40,
+    FLING_INTERVAL_MIN = 25,    -- seconds between fling cycles
+    FLING_INTERVAL_MAX = 35,
     FLING_WARNING_DELAY = 5,
     NO_TRADE_TIMEOUT = 45,
-    DEBUG = true,   -- Set to false to silence logs
+    GLOBAL_CHAT_COOLDOWN = 5,   -- minimum seconds between any chat send
+    DEBUG = true,
 }
 
 -- ============================================
@@ -44,6 +46,7 @@ local isTradePending = false
 local tradeAccepted = false
 local lastTradeTime = tick()
 local lastFlingTime = 0
+local lastChatTime = 0           -- for global cooldown
 local announcementConnection = nil
 local tradeListenerConnection = nil
 local serverHopCoroutine = nil
@@ -61,7 +64,7 @@ local SKIN_KEYWORDS = {
 }
 
 -- ============================================
--- DEBUG LOGGING
+-- DEBUG LOG
 -- ============================================
 local function debugLog(...)
     if CONFIG.DEBUG then
@@ -70,7 +73,7 @@ local function debugLog(...)
 end
 
 -- ============================================
--- HELPER: SKIN DETECTION
+-- SKIN DETECTION
 -- ============================================
 local function isWeaponSkin(itemName)
     if not itemName then return false end
@@ -107,7 +110,7 @@ local function countWeaponSkins(tradeData)
 end
 
 -- ============================================
--- HUMAN‑LIKE RANDOM DELAYS
+-- HUMAN-LIKE DELAYS
 -- ============================================
 local function humanDelay(base)
     local jitter = base * (0.6 + math.random() * 0.8)
@@ -123,27 +126,35 @@ local function shortWait()
 end
 
 -- ============================================
--- CHAT SENDING (Multiple methods – actually sends)
+-- CHAT SENDING – SERVER‑SIDE ONLY (broadcasts to all)
 -- ============================================
 local function sendChatMessage(message)
-    debugLog("Attempting to send chat message:", message)
+    -- Respect global cooldown
+    local now = tick()
+    if now - lastChatTime < CONFIG.GLOBAL_CHAT_COOLDOWN then
+        debugLog("Chat cooldown – skipping message:", message)
+        return false
+    end
+    lastChatTime = now
+
+    debugLog("Sending chat message:", message)
     local success = false
 
-    -- Method 1: TextChatService (new system)
+    -- Method 1: TextChatService (new system) – SendAsync broadcasts to all
     pcall(function()
         local channels = TextChatService:FindFirstChild("TextChannels")
         if channels then
             local channel = channels:FindFirstChild("RBXGeneral") or channels:FindFirstChild("General")
-            if channel and channel.DisplaySystemMessage then
-                channel:DisplaySystemMessage(message)
+            if channel and channel.SendAsync then
+                channel:SendAsync(message)
                 success = true
-                debugLog("Sent via TextChatService")
+                debugLog("Sent via TextChatService.SendAsync")
                 return
             end
         end
     end)
 
-    -- Method 2: DefaultChatSystemChatEvents (old system)
+    -- Method 2: DefaultChatSystemChatEvents (old system) – FireServer broadcasts
     if not success then
         pcall(function()
             local chatRemote = ReplicatedStorage:FindFirstChild("DefaultChatSystemChatEvents")
@@ -172,15 +183,6 @@ local function sendChatMessage(message)
         end)
     end
 
-    -- Method 4: SetCore (system message)
-    if not success then
-        pcall(function()
-            StarterGui:SetCore("ChatMakeSystemMessage", { Text = message })
-            success = true
-            debugLog("Sent via SetCore")
-        end)
-    end
-
     if not success then
         warn("[ERROR] All chat methods failed – message not sent.")
     end
@@ -188,7 +190,7 @@ local function sendChatMessage(message)
 end
 
 -- ============================================
--- FLING ALL PLAYERS
+-- FLING (unchanged, but now triggered less often)
 -- ============================================
 local function flingAllPlayers()
     debugLog("Starting fling...")
@@ -201,7 +203,6 @@ local function flingAllPlayers()
             if targetChar then
                 local root = targetChar:FindFirstChild("HumanoidRootPart")
                 if root then
-                    -- Randomised direction
                     local angle1 = math.random() * math.pi * 2
                     local angle2 = math.random() * math.pi * 2
                     local forceX = math.sin(angle1) * force * (0.5 + math.random() * 0.5)
@@ -226,11 +227,7 @@ local function flingAllPlayers()
 
                     flingCount = flingCount + 1
                     task.wait(shortWait())
-                else
-                    debugLog("No HumanoidRootPart for", target.Name)
                 end
-            else
-                debugLog("No Character for", target.Name)
             end
         end
     end
@@ -239,7 +236,7 @@ local function flingAllPlayers()
 end
 
 -- ============================================
--- TRADE SYSTEM
+-- TRADE SYSTEM (unchanged)
 -- ============================================
 local function getTradeRemotes()
     local remotes = {}
@@ -247,7 +244,6 @@ local function getTradeRemotes()
         local name = string.lower(child.Name)
         if string.find(name, "trade") and (child:IsA("RemoteEvent") or child:IsA("RemoteFunction")) then
             table.insert(remotes, child)
-            debugLog("Found trade remote:", child.Name)
         end
     end
     return remotes
@@ -276,7 +272,6 @@ local function acceptTrade(tradeData)
             if accepted then break end
         end
 
-        -- Try specific MM2 AcceptRequest
         if not accepted then
             local tradeRemote = ReplicatedStorage:FindFirstChild("Trade")
             if tradeRemote then
@@ -285,7 +280,6 @@ local function acceptTrade(tradeData)
                     pcall(function()
                         acceptReq:FireServer()
                         accepted = true
-                        debugLog("Accepted via Trade.AcceptRequest")
                     end)
                 end
             end
@@ -305,7 +299,6 @@ local function declineTrade(tradeData)
             pcall(function()
                 if remote:IsA("RemoteEvent") then remote:FireServer(tradeData)
                 else remote:InvokeServer(tradeData) end
-                debugLog("Declined trade")
                 return true
             end)
         end
@@ -323,7 +316,6 @@ local function clickAcceptButton()
                     task.wait(shortWait())
                     pcall(function()
                         child:Fire("MouseButton1Click")
-                        debugLog("Clicked UI accept button")
                     end)
                     return true
                 end
@@ -367,7 +359,6 @@ local function setupTradeListener()
 
                 if not tradeData and sender then tradeData = {} end
 
-                -- Validate that this is actually a trade
                 local isValid = false
                 if tradeData and type(tradeData) == "table" then
                     for _, v in pairs(tradeData) do
@@ -382,11 +373,9 @@ local function setupTradeListener()
                     isTradePending = true
 
                     local delay = randomHumanWait(0.5, 2.0)
-                    debugLog("Trade from", sender and sender.Name or "unknown", "- responding in", string.format("%.2f", delay), "s")
                     task.wait(delay)
 
                     local skinCount = countWeaponSkins(tradeData)
-                    debugLog("Skins found:", skinCount)
 
                     table.insert(tradeLog, {
                         time = os.date("%H:%M:%S"),
@@ -399,7 +388,6 @@ local function setupTradeListener()
                         debugLog("ACCEPTING (4+ skins)")
                         sendChatMessage("[ANNOUNCEMENT] Trade accepted! Thank you for the items!")
 
-                        -- MM2 cooldown
                         local cooldownWait = CONFIG.TRADE_COOLDOWN + (math.random() * 0.5 - 0.25)
                         task.wait(cooldownWait)
                         task.wait(shortWait())
@@ -440,11 +428,11 @@ local function setupTradeListener()
 end
 
 -- ============================================
--- MAIN LOOP (Announcements + Fling)
+-- MAIN LOOP – now with much longer intervals
 -- ============================================
 local function startMainLoop()
     if announcementConnection then announcementConnection:Disconnect() end
-    debugLog("Main loop started")
+    debugLog("Main loop started (long intervals)")
 
     local announceTimer = 0
     announcementConnection = RunService.Heartbeat:Connect(function(dt)
@@ -458,8 +446,9 @@ local function startMainLoop()
             sendChatMessage("[ANNOUNCEMENT] i will not stop kill all untill someone gives me 4 items")
         end
 
-        -- Fling
-        if not isFlinging and (tick() - lastFlingTime) > (CONFIG.FLING_INTERVAL + math.random() * 0.5) then
+        -- Fling – now triggered much less often (every 25‑35s)
+        local flingInterval = CONFIG.FLING_INTERVAL_MIN + math.random() * (CONFIG.FLING_INTERVAL_MAX - CONFIG.FLING_INTERVAL_MIN)
+        if not isFlinging and (tick() - lastFlingTime) > flingInterval then
             debugLog("Fling sequence triggered")
             sendChatMessage("Please kindly send a trade my way! 5 seconds remaining till kill all!")
             task.wait(CONFIG.FLING_WARNING_DELAY + (math.random() * 0.5 - 0.25))
@@ -500,15 +489,12 @@ end
 -- ============================================
 local function closeSystem()
     isActive = false
-
     if announcementConnection then announcementConnection:Disconnect(); announcementConnection = nil end
     if tradeListenerConnection then tradeListenerConnection:Disconnect(); tradeListenerConnection = nil end
     if serverHopCoroutine then coroutine.close(serverHopCoroutine); serverHopCoroutine = nil end
     if gui then gui:Destroy(); gui = nil end
-
     isFlinging = false
     isTradePending = false
-
     debugLog("System closed – all connections cleaned up.")
 end
 
@@ -524,7 +510,7 @@ local function setupPersistence()
 end
 
 -- ============================================
--- TRADE LOG PRINTER
+-- TRADE LOG
 -- ============================================
 local function printTradeLog()
     print("========== TRADE LOG ==========")
@@ -541,7 +527,7 @@ local function printTradeLog()
 end
 
 -- ============================================
--- GUI CREATION (with X button)
+-- GUI (with Test Chat button)
 -- ============================================
 local function createGUI()
     if gui then gui:Destroy() end
@@ -552,8 +538,8 @@ local function createGUI()
     gui.Parent = player:WaitForChild("PlayerGui")
 
     local frame = Instance.new("Frame")
-    frame.Size = UDim2.new(0, 260, 0, 160)
-    frame.Position = UDim2.new(0.5, -130, 0.5, -80)
+    frame.Size = UDim2.new(0, 280, 0, 170)
+    frame.Position = UDim2.new(0.5, -140, 0.5, -85)
     frame.BackgroundColor3 = Color3.fromRGB(25, 25, 35)
     frame.BackgroundTransparency = 0.15
     frame.BorderSizePixel = 2
@@ -562,7 +548,7 @@ local function createGUI()
     frame.Draggable = true
     frame.Parent = gui
 
-    -- Close (X) button
+    -- Close button
     local closeBtn = Instance.new("TextButton")
     closeBtn.Size = UDim2.new(0, 30, 0, 30)
     closeBtn.Position = UDim2.new(1, -35, 0, 5)
@@ -581,7 +567,7 @@ local function createGUI()
     title.Size = UDim2.new(1, 0, 0, 30)
     title.Position = UDim2.new(0, 0, 0, 0)
     title.BackgroundTransparency = 1
-    title.Text = "🔪 MM2 Trade v4.0"
+    title.Text = "🔪 MM2 Trade v5.0"
     title.TextColor3 = Color3.fromRGB(255, 170, 0)
     title.TextScaled = true
     title.Font = Enum.Font.GothamBold
@@ -624,7 +610,7 @@ local function createGUI()
     logBtn.Parent = frame
     logBtn.MouseButton1Click:Connect(printTradeLog)
 
-    -- Test chat button (for debugging)
+    -- Test chat button
     local testBtn = Instance.new("TextButton")
     testBtn.Size = UDim2.new(0, 80, 0, 25)
     testBtn.Position = UDim2.new(0.5, -125, 0, 120)
@@ -637,7 +623,7 @@ local function createGUI()
     testBtn.Parent = frame
     testBtn.MouseButton1Click:Connect(function()
         debugLog("Manual chat test triggered")
-        sendChatMessage("[TEST] If you see this, chat is working!")
+        sendChatMessage("[TEST] If you see this, chat is working for everyone!")
     end)
 
     -- Toggle logic
@@ -662,6 +648,8 @@ local function createGUI()
             debugLog("========================================")
             debugLog("SYSTEM ACTIVATED at", os.date("%H:%M:%S"))
             debugLog("Required skins:", CONFIG.REQUIRED_SKINS)
+            debugLog("Announce interval: " .. CONFIG.ANNOUNCE_MIN .. "-" .. CONFIG.ANNOUNCE_MAX .. "s")
+            debugLog("Fling interval: " .. CONFIG.FLING_INTERVAL_MIN .. "-" .. CONFIG.FLING_INTERVAL_MAX .. "s")
             debugLog("========================================")
 
             sendChatMessage("[ANNOUNCEMENT] System activated! Send trades with 4+ weapon skins!")
@@ -693,10 +681,10 @@ local function createGUI()
 end
 
 -- ============================================
--- INITIALIZATION
+-- INIT
 -- ============================================
 debugLog("========================================")
-debugLog("MM2 Trade Automation v4.0 Loading...")
+debugLog("MM2 Trade Automation v5.0 Loading...")
 debugLog("Loaded at", os.date("%H:%M:%S"))
 debugLog("========================================")
 
@@ -707,3 +695,4 @@ debugLog("Script loaded successfully.")
 debugLog("Click 'START SYSTEM' to begin.")
 debugLog("Use the red '✕' button to close/uninject.")
 debugLog("Press F9 to see debug logs.")
+debugLog("Test chat with the '🧪 TEST CHAT' button.")
