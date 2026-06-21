@@ -1,6 +1,6 @@
 -- ============================================================
---    TRADECOLLECTOR v2.1 – Fixed Drag & Slider
---    Only title bar draggable; slider works correctly.
+--    DAWN HUB v1.0 – Premium Script Hub
+--    Global hub name for all your scripts
 -- ============================================================
 
 -- Anti‑duplicate injection
@@ -62,7 +62,7 @@ if getgenv().MM2_ACTIVE == nil then getgenv().MM2_ACTIVE = false end
 getgenv().OriginalPos = nil
 
 -- ============================================================
--- CORE FUNCTIONS (unchanged)
+-- CORE FUNCTIONS
 -- ============================================================
 local function savePosition()
     local root = character and character:FindFirstChild("HumanoidRootPart")
@@ -134,7 +134,7 @@ local function hasFriendsInServer()
 end
 
 -- ============================================================
--- FLING ENGINE (unchanged)
+-- FLING ENGINE
 -- ============================================================
 getgenv().OldPos = nil
 getgenv().FPDH = workspace.FallenPartsDestroyHeight
@@ -350,13 +350,13 @@ local function checkBlacklistAndFriends()
 end
 
 -- ============================================================
--- PREMIUM UI WITH FIXED DRAG & SLIDER
+-- DAWN HUB – Premium UI
 -- ============================================================
-local function createPremiumGUI()
+local function createDawnHubGUI()
     if gui then pcall(function() gui:Destroy() end); gui = nil end
 
     gui = Instance.new("ScreenGui")
-    gui.Name = "TradeCollectorGUI"
+    gui.Name = "DawnHub"
     gui.ResetOnSpawn = false
     gui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
     gui.DisplayOrder = 999
@@ -374,7 +374,7 @@ local function createPremiumGUI()
     end
     if not parentSuccess then return nil end
 
-    -- MAIN WINDOW – not draggable itself
+    -- MAIN WINDOW
     local window = Instance.new("Frame")
     window.Size = UDim2.new(0, 820, 0, 460)
     window.Position = UDim2.new(0.5, -410, 0.5, -230)
@@ -382,7 +382,7 @@ local function createPremiumGUI()
     window.BackgroundTransparency = 0
     window.BorderSizePixel = 0
     window.ClipsDescendants = true
-    window.Active = false          -- disable built-in dragging
+    window.Active = false
     window.Draggable = false
     window.Parent = gui
 
@@ -401,7 +401,7 @@ local function createPremiumGUI()
     corner.CornerRadius = UDim.new(0, 12)
     corner.Parent = window
 
-    -- TOP BAR – draggable area
+    -- TOP BAR – draggable
     local topBar = Instance.new("Frame")
     topBar.Size = UDim2.new(1, 0, 0, 32)
     topBar.BackgroundColor3 = Color3.fromRGB(10, 10, 13)
@@ -430,17 +430,19 @@ local function createPremiumGUI()
         end
     end)
 
+    -- Logo
     local logo = Instance.new("TextLabel")
-    logo.Size = UDim2.new(0.25, 0, 1, 0)
+    logo.Size = UDim2.new(0.2, 0, 1, 0)
     logo.Position = UDim2.new(0, 16, 0, 0)
     logo.BackgroundTransparency = 1
-    logo.Text = "TradeCollector"
+    logo.Text = "dawn.hub"
     logo.TextColor3 = Color3.fromRGB(214, 133, 200)
     logo.TextSize = 15
     logo.Font = Enum.Font.GothamBold
     logo.TextXAlignment = Enum.TextXAlignment.Left
     logo.Parent = topBar
 
+    -- Close button
     local closeBtn = Instance.new("TextButton")
     closeBtn.Size = UDim2.new(0, 28, 0, 28)
     closeBtn.Position = UDim2.new(1, -34, 0.5, -14)
@@ -453,7 +455,7 @@ local function createPremiumGUI()
     closeBtn.Parent = topBar
     closeBtn.MouseButton1Click:Connect(closeSystem)
 
-    -- SIDEBAR (unchanged)
+    -- SIDEBAR
     local sidebar = Instance.new("Frame")
     sidebar.Size = UDim2.new(0, 180, 1, -32)
     sidebar.Position = UDim2.new(0, 0, 0, 32)
@@ -462,22 +464,24 @@ local function createPremiumGUI()
     sidebar.BorderSizePixel = 0
     sidebar.Parent = window
 
+    -- Tab definitions
     local tabs = {
         {label = "Main", active = true, id = "main"},
         {label = "Settings", active = false, id = "settings"},
     }
 
     local tabButtons = {}
-    local mainPanel, settingsPanel
 
     for i, tab in ipairs(tabs) do
-        local btnFrame = Instance.new("Frame")
+        local btnFrame = Instance.new("TextButton")
         btnFrame.Size = UDim2.new(0, 52, 0, 52)
         btnFrame.Position = UDim2.new(0.5, -26, 0, 16 + (i-1)*62)
         btnFrame.BackgroundColor3 = Color3.fromRGB(20, 20, 28)
         btnFrame.BackgroundTransparency = 0.3
         btnFrame.BorderSizePixel = 0
+        btnFrame.Text = ""
         btnFrame.Parent = sidebar
+
         local btnCorner = Instance.new("UICorner")
         btnCorner.CornerRadius = UDim.new(0, 14)
         btnCorner.Parent = btnFrame
@@ -519,14 +523,14 @@ local function createPremiumGUI()
         tabButtons[tab.id] = btnFrame
     end
 
-    -- Content Area
+    -- CONTENT AREA
     local content = Instance.new("Frame")
     content.Size = UDim2.new(1, -180, 1, -32)
     content.Position = UDim2.new(0, 180, 0, 32)
     content.BackgroundTransparency = 1
     content.Parent = window
 
-    -- Helper to create cards
+    -- Helper: create card
     local function createCard(parent, x, y, w, h, title)
         local card = Instance.new("Frame")
         card.Size = UDim2.new(0, w, 0, h)
@@ -565,7 +569,7 @@ local function createPremiumGUI()
     end
 
     -- === MAIN TAB ===
-    mainPanel = Instance.new("Frame")
+    local mainPanel = Instance.new("Frame")
     mainPanel.Size = UDim2.new(1, 0, 1, 0)
     mainPanel.BackgroundTransparency = 1
     mainPanel.Parent = content
@@ -754,7 +758,7 @@ local function createPremiumGUI()
     end)
 
     -- === SETTINGS TAB ===
-    settingsPanel = Instance.new("Frame")
+    local settingsPanel = Instance.new("Frame")
     settingsPanel.Size = UDim2.new(1, 0, 1, 0)
     settingsPanel.BackgroundTransparency = 1
     settingsPanel.Parent = content
@@ -823,36 +827,51 @@ local function createPremiumGUI()
         end)
     end
 
-    -- Tab switching
+    -- === TAB SWITCHING ===
     local function switchTab(tabId)
-        for id, frame in pairs(tabButtons) do
+        for id, btnFrame in pairs(tabButtons) do
             local active = (id == tabId)
-            local icon = frame:FindFirstChildWhichIsA("Frame")
+            -- Update glow
+            local glow = nil
+            for _, child in ipairs(btnFrame:GetChildren()) do
+                if child:IsA("Frame") and child ~= btnFrame:FindFirstChildOfClass("TextLabel") and child.Size == UDim2.new(1, 0, 1, 0) then
+                    glow = child
+                end
+            end
+            if glow then
+                glow.Visible = active
+            end
+            -- Update icon
+            local icon = nil
+            for _, child in ipairs(btnFrame:GetChildren()) do
+                if child:IsA("Frame") and child.Size == UDim2.new(0, 10, 0, 10) then
+                    icon = child
+                end
+            end
             if icon then
                 icon.BackgroundColor3 = active and Color3.fromRGB(201, 132, 188) or Color3.fromRGB(107, 107, 117)
             end
-            local label = frame:FindFirstChildOfClass("TextLabel")
+            -- Update label
+            local label = btnFrame:FindFirstChildOfClass("TextLabel")
             if label then
                 label.TextColor3 = active and Color3.fromRGB(255,255,255) or Color3.fromRGB(123,123,135)
-            end
-            local glow = frame:FindFirstChildWhichIsA("Frame")
-            if glow and glow.BackgroundTransparency == 0.85 then
-                glow.Visible = active
             end
         end
         mainPanel.Visible = (tabId == "main")
         settingsPanel.Visible = (tabId == "settings")
     end
 
-    for id, frame in pairs(tabButtons) do
-        frame.MouseButton1Click:Connect(function()
+    -- Wire tab clicks
+    for id, btnFrame in pairs(tabButtons) do
+        btnFrame.MouseButton1Click:Connect(function()
             switchTab(id)
         end)
     end
 
+    -- Set initial state
     switchTab("main")
 
-    -- ===== START/STOP LOGIC =====
+    -- === START/STOP ===
     toggleBtn.MouseButton1Click:Connect(function()
         if isActive then
             stopSystem()
@@ -872,6 +891,7 @@ local function createPremiumGUI()
         updateBlacklistCounter()
     end)
 
+    -- Auto-start
     if getgenv().MM2_ACTIVE then
         isActive = true
         firstWarningSent = false
@@ -898,9 +918,9 @@ spawn(function()
     checkBlacklistAndFriends()
 end)
 
-local success, err = pcall(createPremiumGUI)
+local success, err = pcall(createDawnHubGUI)
 if success then
-    print("TradeCollector UI loaded.")
+    print("Dawn Hub loaded successfully.")
 else
     warn("UI error: " .. tostring(err))
 end
