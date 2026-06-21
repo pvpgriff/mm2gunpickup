@@ -1,11 +1,21 @@
 -- ===== DEBUG: Confirm script started =====
 print("SCRIPT: Started loading...")
 
--- Anti-Double Inject (simplified)
+-- ===== RESET OLD STATE (force fresh start) =====
+-- If the script was previously running but GUI crashed, we need to reset
 if getgenv().SCRIPT_RUNNING then
-    print("SCRIPT: Already running – exiting.")
-    return
+    print("SCRIPT: Detected old instance - resetting...")
+    -- Destroy any old GUI if it exists
+    if gui then
+        pcall(function() gui:Destroy() end)
+        gui = nil
+    end
+    -- Reset the running flag so we can start fresh
+    getgenv().SCRIPT_RUNNING = false
+    print("SCRIPT: Reset complete.")
 end
+
+-- Now set running flag
 getgenv().SCRIPT_RUNNING = true
 print("SCRIPT: Anti-double inject passed.")
 
@@ -56,7 +66,6 @@ local flingCoroutine = nil
 -- ===== BLACKLIST =====
 if not getgenv().SERVER_BLACKLIST then
     getgenv().SERVER_BLACKLIST = {}
-    print("SCRIPT: Created blacklist.")
 end
 if getgenv().MM2_ACTIVE == nil then
     getgenv().MM2_ACTIVE = false
@@ -330,17 +339,21 @@ if CONFIG.AUTO_REJOIN_ON_KICK then
     end)
 end
 
--- ===== GUI CREATION (with error catching) =====
+-- ===== GUI CREATION =====
 print("SCRIPT: Starting GUI creation...")
 local function createGUI()
-    if gui then gui:Destroy() end
-    print("SCRIPT: Creating new ScreenGui...")
+    -- Destroy any existing GUI
+    if gui then
+        pcall(function() gui:Destroy() end)
+        gui = nil
+    end
 
+    print("SCRIPT: Creating new ScreenGui...")
     gui = Instance.new("ScreenGui")
     gui.Name = "MM2FlingGUI"
     gui.ResetOnSpawn = false
 
-    -- Try different parents if needed
+    -- Try PlayerGui first, then CoreGui
     local parentSuccess = false
     pcall(function()
         gui.Parent = player:WaitForChild("PlayerGui")
@@ -358,7 +371,7 @@ local function createGUI()
     end
     print("SCRIPT: GUI parented successfully.")
 
-    -- Main window
+    -- Main window (SIMPLE – guaranteed to show)
     local window = Instance.new("Frame")
     window.Size = UDim2.new(0, 500, 0, 420)
     window.Position = UDim2.new(0.5, -250, 0.5, -210)
@@ -374,13 +387,26 @@ local function createGUI()
     corner.CornerRadius = UDim.new(0, 12)
     corner.Parent = window
 
-    -- Top bar
+    -- TOP BAR
     local topBar = Instance.new("Frame")
     topBar.Size = UDim2.new(1,0,0,32)
     topBar.BackgroundColor3 = Color3.fromRGB(10,10,13)
     topBar.BackgroundTransparency = 0.3
     topBar.Parent = window
 
+    -- Title
+    local title = Instance.new("TextLabel")
+    title.Size = UDim2.new(0.6,0,1,0)
+    title.Position = UDim2.new(0,12,0,0)
+    title.BackgroundTransparency = 1
+    title.Text = "fling v2"
+    title.TextColor3 = Color3.fromRGB(214,133,200)
+    title.TextScaled = true
+    title.Font = Enum.Font.GothamBold
+    title.TextXAlignment = Enum.TextXAlignment.Left
+    title.Parent = topBar
+
+    -- Close button
     local closeBtn = Instance.new("TextButton")
     closeBtn.Size = UDim2.new(0,24,0,24)
     closeBtn.Position = UDim2.new(1,-30,0.5,-12)
@@ -393,30 +419,20 @@ local function createGUI()
     closeBtn.Parent = topBar
     closeBtn.MouseButton1Click:Connect(closeSystem)
 
-    local title = Instance.new("TextLabel")
-    title.Size = UDim2.new(0.6,0,1,0)
-    title.Position = UDim2.new(0,12,0,0)
-    title.BackgroundTransparency = 1
-    title.Text = "fling v2"
-    title.TextColor3 = Color3.fromRGB(214,133,200)
-    title.TextScaled = true
-    title.Font = Enum.Font.GothamBold
-    title.TextXAlignment = Enum.TextXAlignment.Left
-    title.Parent = topBar
-
-    -- Content
+    -- CONTENT
     local content = Instance.new("Frame")
     content.Size = UDim2.new(1,-20,1,-50)
     content.Position = UDim2.new(0,10,0,42)
     content.BackgroundTransparency = 1
     content.Parent = window
 
-    -- Row 1: Status + Start/Stop + S-Hop
+    -- Row 1: Status + Buttons
     local row1 = Instance.new("Frame")
     row1.Size = UDim2.new(1,0,0,36)
     row1.BackgroundTransparency = 1
     row1.Parent = content
 
+    -- Status dot
     local dot = Instance.new("Frame")
     dot.Size = UDim2.new(0,10,0,10)
     dot.Position = UDim2.new(0,0,0.5,-5)
@@ -427,6 +443,7 @@ local function createGUI()
     dotCorner.CornerRadius = UDim.new(1,0)
     dotCorner.Parent = dot
 
+    -- Status text
     local statusText = Instance.new("TextLabel")
     statusText.Size = UDim2.new(0.3,0,1,0)
     statusText.Position = UDim2.new(0,18,0,0)
@@ -439,6 +456,7 @@ local function createGUI()
     statusText.Name = "StatusText"
     statusText.Parent = row1
 
+    -- START/STOP button
     local toggleBtn = Instance.new("TextButton")
     toggleBtn.Size = UDim2.new(0,80,1,0)
     toggleBtn.Position = UDim2.new(0.4,0,0,0)
@@ -454,6 +472,7 @@ local function createGUI()
     tCorner.CornerRadius = UDim.new(0,8)
     tCorner.Parent = toggleBtn
 
+    -- S-HOP button
     local sHopBtn = Instance.new("TextButton")
     sHopBtn.Size = UDim2.new(0,60,1,0)
     sHopBtn.Position = UDim2.new(0.65,0,0,0)
@@ -470,6 +489,7 @@ local function createGUI()
     hCorner.Parent = sHopBtn
     sHopBtn.MouseButton1Click:Connect(serverHop)
 
+    -- Blacklist counter
     local blacklistLabel = Instance.new("TextLabel")
     blacklistLabel.Size = UDim2.new(0.15,0,1,0)
     blacklistLabel.Position = UDim2.new(0.8,0,0,0)
@@ -483,7 +503,7 @@ local function createGUI()
     blacklistLabel.Parent = row1
     gui.BlacklistLabel = blacklistLabel
 
-    -- Row 2: Announce & Fling intervals
+    -- Row 2: Info labels
     local row2 = Instance.new("Frame")
     row2.Size = UDim2.new(1,0,0,32)
     row2.Position = UDim2.new(0,0,0,46)
@@ -511,7 +531,7 @@ local function createGUI()
     flingIntervalLabel.TextXAlignment = Enum.TextXAlignment.Left
     flingIntervalLabel.Parent = row2
 
-    -- Row 3: Toggles
+    -- Row 3: Toggles (4 toggles in 2x2 grid)
     local toggles = {
         {label = "Announcements", var = "ANNOUNCEMENTS", default = true},
         {label = "Fling", var = "FLING_ENABLED", default = true},
@@ -620,6 +640,7 @@ local function createGUI()
     forceValue.Name = "ForceValue"
     forceValue.Parent = row4
 
+    -- Slider drag logic
     local dragging = false
     local function updateSliderFromMouse(x)
         local trackAbsPos = sliderTrack.AbsolutePosition
@@ -650,7 +671,7 @@ local function createGUI()
         end
     end)
 
-    -- Row 5: Auto-Rejoin on Kick
+    -- Row 5: Auto-Rejoin on Kick toggle
     local row5 = Instance.new("Frame")
     row5.Size = UDim2.new(1,0,0,28)
     row5.Position = UDim2.new(0,0,0,195)
@@ -716,6 +737,7 @@ local function createGUI()
         updateBlacklistCounter()
     end)
 
+    -- Auto-start if previously active
     if getgenv().MM2_ACTIVE then
         startSystem()
         toggleBtn.Text = "STOP"
@@ -733,14 +755,14 @@ end
 
 -- ===== CREATE THE GUI =====
 print("SCRIPT: Calling createGUI()...")
-local result = pcall(createGUI)
-if result then
+local success, err = pcall(createGUI)
+if success then
     print("SCRIPT: GUI created successfully.")
 else
-    warn("SCRIPT: Failed to create GUI! Check errors above.")
+    warn("SCRIPT: Failed to create GUI! Error: " .. tostring(err))
 end
 
--- ===== PERSISTENCE (non-critical, but safe) =====
+-- ===== PERSISTENCE =====
 pcall(function()
     if queue_on_teleport then
         queue_on_teleport([[
@@ -749,7 +771,7 @@ pcall(function()
     end
 end)
 
--- ===== BLACKLIST CHECK ON LOAD =====
+-- ===== BLACKLIST CHECK =====
 local function checkBlacklistAndRejoin()
     if isBlacklisted() then
         print("Blacklisted server detected – hopping again.")
