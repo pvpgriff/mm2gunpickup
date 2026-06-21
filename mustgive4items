@@ -1,6 +1,6 @@
 -- ============================================================
---    DAWN HUB v1.0 – Premium Script Hub
---    Global hub name for all your scripts
+--    DAWN HUB v2.0 – Premium Script Hub
+--    Features: Persistence, Minimize, Custom Bold Font
 -- ============================================================
 
 -- Anti‑duplicate injection
@@ -8,18 +8,39 @@ if getgenv().SCRIPT_RUNNING then return end
 getgenv().SCRIPT_RUNNING = true
 getgenv().KEEP_ALIVE = true
 
-if not getgenv().TELEPORT_QUEUED then
-    getgenv().TELEPORT_QUEUED = true
-    pcall(function()
-        if queue_on_teleport then
-            queue_on_teleport([[
-                if getgenv().KEEP_ALIVE then
-                    loadstring(game:HttpGet("https://raw.githubusercontent.com/ddawwn/mm2/refs/heads/main/mustgive4items"))()
+-- URL for reloading (ensure this is correct)
+getgenv().SCRIPT_URL = "https://raw.githubusercontent.com/ddawwn/mm2/refs/heads/main/mustgive4items"
+
+-- Watchdog: reloads on server change (if script survives teleport)
+if not getgenv().WATCHDOG_RUNNING then
+    getgenv().WATCHDOG_RUNNING = true
+    spawn(function()
+        local currentPlaceId = game.PlaceId
+        while true do
+            task.wait(3)
+            if game.PlaceId ~= currentPlaceId then
+                print("[WATCHDOG] Server changed. Reloading...")
+                currentPlaceId = game.PlaceId
+                if getgenv().KEEP_ALIVE and getgenv().SCRIPT_URL then
+                    pcall(function()
+                        loadstring(game:HttpGet(getgenv().SCRIPT_URL))()
+                    end)
                 end
-            ]])
+            end
         end
     end)
 end
+
+-- Teleport queue (for executors that support it)
+pcall(function()
+    if queue_on_teleport then
+        queue_on_teleport([[
+            if getgenv().KEEP_ALIVE then
+                loadstring(game:HttpGet("https://raw.githubusercontent.com/ddawwn/mm2/refs/heads/main/mustgive4items"))()
+            end
+        ]])
+    end
+end)
 
 -- ============================================================
 -- SERVICES
@@ -56,13 +77,16 @@ local gui = nil
 local announcementConnection = nil
 local flingCoroutine = nil
 local blacklistLabelRef = nil
+local isMinimized = false
+local fullSize = UDim2.new(0, 820, 0, 460)
+local minimizedSize = UDim2.new(0, 180, 0, 32)
 
 if not getgenv().SERVER_BLACKLIST then getgenv().SERVER_BLACKLIST = {} end
 if getgenv().MM2_ACTIVE == nil then getgenv().MM2_ACTIVE = false end
 getgenv().OriginalPos = nil
 
 -- ============================================================
--- CORE FUNCTIONS
+-- CORE FUNCTIONS (unchanged)
 -- ============================================================
 local function savePosition()
     local root = character and character:FindFirstChild("HumanoidRootPart")
@@ -350,7 +374,7 @@ local function checkBlacklistAndFriends()
 end
 
 -- ============================================================
--- DAWN HUB – Premium UI
+-- DAWN HUB UI with MINIMIZE and BOLD UPPERCASE FONT
 -- ============================================================
 local function createDawnHubGUI()
     if gui then pcall(function() gui:Destroy() end); gui = nil end
@@ -376,7 +400,7 @@ local function createDawnHubGUI()
 
     -- MAIN WINDOW
     local window = Instance.new("Frame")
-    window.Size = UDim2.new(0, 820, 0, 460)
+    window.Size = fullSize
     window.Position = UDim2.new(0.5, -410, 0.5, -230)
     window.BackgroundColor3 = Color3.fromRGB(10, 10, 13)
     window.BackgroundTransparency = 0
@@ -430,17 +454,29 @@ local function createDawnHubGUI()
         end
     end)
 
-    -- Logo
+    -- LOGO (uppercase bold)
     local logo = Instance.new("TextLabel")
     logo.Size = UDim2.new(0.2, 0, 1, 0)
     logo.Position = UDim2.new(0, 16, 0, 0)
     logo.BackgroundTransparency = 1
-    logo.Text = "dawn.hub"
+    logo.Text = "DAWN.HUB"
     logo.TextColor3 = Color3.fromRGB(214, 133, 200)
-    logo.TextSize = 15
+    logo.TextSize = 16
     logo.Font = Enum.Font.GothamBold
     logo.TextXAlignment = Enum.TextXAlignment.Left
     logo.Parent = topBar
+
+    -- Minimize button
+    local minBtn = Instance.new("TextButton")
+    minBtn.Size = UDim2.new(0, 28, 0, 28)
+    minBtn.Position = UDim2.new(1, -64, 0.5, -14)
+    minBtn.Text = "−"
+    minBtn.TextColor3 = Color3.fromRGB(180, 180, 200)
+    minBtn.BackgroundTransparency = 1
+    minBtn.TextSize = 18
+    minBtn.Font = Enum.Font.GothamBold
+    minBtn.BorderSizePixel = 0
+    minBtn.Parent = topBar
 
     -- Close button
     local closeBtn = Instance.new("TextButton")
@@ -455,19 +491,25 @@ local function createDawnHubGUI()
     closeBtn.Parent = topBar
     closeBtn.MouseButton1Click:Connect(closeSystem)
 
+    -- CONTENT CONTAINER (everything below top bar)
+    local contentContainer = Instance.new("Frame")
+    contentContainer.Size = UDim2.new(1, 0, 1, -32)
+    contentContainer.Position = UDim2.new(0, 0, 0, 32)
+    contentContainer.BackgroundTransparency = 1
+    contentContainer.Parent = window
+
     -- SIDEBAR
     local sidebar = Instance.new("Frame")
-    sidebar.Size = UDim2.new(0, 180, 1, -32)
-    sidebar.Position = UDim2.new(0, 0, 0, 32)
+    sidebar.Size = UDim2.new(0, 180, 1, 0)
     sidebar.BackgroundColor3 = Color3.fromRGB(14, 14, 19)
     sidebar.BackgroundTransparency = 0.2
     sidebar.BorderSizePixel = 0
-    sidebar.Parent = window
+    sidebar.Parent = contentContainer
 
     -- Tab definitions
     local tabs = {
-        {label = "Main", active = true, id = "main"},
-        {label = "Settings", active = false, id = "settings"},
+        {label = "MAIN", active = true, id = "main"},
+        {label = "SETTINGS", active = false, id = "settings"},
     }
 
     local tabButtons = {}
@@ -516,19 +558,19 @@ local function createDawnHubGUI()
         label.Text = tab.label
         label.TextColor3 = tab.active and Color3.fromRGB(255,255,255) or Color3.fromRGB(123,123,135)
         label.TextSize = 12
-        label.Font = Enum.Font.GothamMedium
+        label.Font = Enum.Font.GothamBold
         label.TextXAlignment = Enum.TextXAlignment.Center
         label.Parent = btnFrame
 
         tabButtons[tab.id] = btnFrame
     end
 
-    -- CONTENT AREA
+    -- CONTENT AREA (right side)
     local content = Instance.new("Frame")
-    content.Size = UDim2.new(1, -180, 1, -32)
-    content.Position = UDim2.new(0, 180, 0, 32)
+    content.Size = UDim2.new(1, -180, 1, 0)
+    content.Position = UDim2.new(0, 180, 0, 0)
     content.BackgroundTransparency = 1
-    content.Parent = window
+    content.Parent = contentContainer
 
     -- Helper: create card
     local function createCard(parent, x, y, w, h, title)
@@ -558,10 +600,10 @@ local function createDawnHubGUI()
         titleLabel.Size = UDim2.new(1, -16, 0, 20)
         titleLabel.Position = UDim2.new(0, 8, 0, 10)
         titleLabel.BackgroundTransparency = 1
-        titleLabel.Text = title
+        titleLabel.Text = string.upper(title)  -- Uppercase bold
         titleLabel.TextColor3 = Color3.fromRGB(110, 110, 121)
-        titleLabel.TextSize = 14
-        titleLabel.Font = Enum.Font.GothamMedium
+        titleLabel.TextSize = 13
+        titleLabel.Font = Enum.Font.GothamBold
         titleLabel.TextXAlignment = Enum.TextXAlignment.Left
         titleLabel.Parent = card
 
@@ -607,7 +649,7 @@ local function createDawnHubGUI()
     statLabel.Text = "OFFLINE"
     statLabel.TextColor3 = Color3.fromRGB(180, 180, 190)
     statLabel.TextSize = 13
-    statLabel.Font = Enum.Font.Gotham
+    statLabel.Font = Enum.Font.GothamBold
     statLabel.TextXAlignment = Enum.TextXAlignment.Left
     statLabel.Name = "StatusLabel"
     statLabel.Parent = statRow
@@ -656,7 +698,7 @@ local function createDawnHubGUI()
     blacklistLabel.Text = "🚫 0"
     blacklistLabel.TextColor3 = Color3.fromRGB(180, 180, 190)
     blacklistLabel.TextSize = 13
-    blacklistLabel.Font = Enum.Font.Gotham
+    blacklistLabel.Font = Enum.Font.GothamBold
     blacklistLabel.TextXAlignment = Enum.TextXAlignment.Left
     blacklistLabel.Name = "BlacklistLabel"
     blacklistLabel.Parent = btnRow
@@ -674,10 +716,10 @@ local function createDawnHubGUI()
     forceLabel.Size = UDim2.new(0.3, 0, 0.4, 0)
     forceLabel.Position = UDim2.new(0, 0, 0, 0)
     forceLabel.BackgroundTransparency = 1
-    forceLabel.Text = "Force"
+    forceLabel.Text = "FORCE"
     forceLabel.TextColor3 = Color3.fromRGB(180,180,190)
     forceLabel.TextSize = 13
-    forceLabel.Font = Enum.Font.Gotham
+    forceLabel.Font = Enum.Font.GothamBold
     forceLabel.TextXAlignment = Enum.TextXAlignment.Left
     forceLabel.Parent = sliderRow
 
@@ -688,7 +730,7 @@ local function createDawnHubGUI()
     forceValue.Text = "5.0e7"
     forceValue.TextColor3 = Color3.fromRGB(180,180,190)
     forceValue.TextSize = 13
-    forceValue.Font = Enum.Font.Gotham
+    forceValue.Font = Enum.Font.GothamBold
     forceValue.TextXAlignment = Enum.TextXAlignment.Right
     forceValue.Name = "ForceValue"
     forceValue.Parent = sliderRow
@@ -766,10 +808,10 @@ local function createDawnHubGUI()
 
     local settingsCard = createCard(settingsPanel, pad, row1Y, 2*cardWidth + gap, cardHeight + 30, "Preferences")
     local toggleData = {
-        {label = "Announcements", var = "ANNOUNCEMENTS", default = true},
-        {label = "Fling Enabled", var = "FLING_ENABLED", default = true},
-        {label = "Reset Position", var = "RESET_POS", default = true},
-        {label = "Anti-Fling", var = "ANTI_FLING", default = true},
+        {label = "ANNOUNCEMENTS", var = "ANNOUNCEMENTS", default = true},
+        {label = "FLING ENABLED", var = "FLING_ENABLED", default = true},
+        {label = "RESET POSITION", var = "RESET_POS", default = true},
+        {label = "ANTI-FLING", var = "ANTI_FLING", default = true},
     }
 
     for i, data in ipairs(toggleData) do
@@ -785,7 +827,7 @@ local function createDawnHubGUI()
         lbl.Text = data.label
         lbl.TextColor3 = Color3.fromRGB(180, 180, 190)
         lbl.TextSize = 12
-        lbl.Font = Enum.Font.Gotham
+        lbl.Font = Enum.Font.GothamBold
         lbl.TextXAlignment = Enum.TextXAlignment.Left
         lbl.Parent = row
 
@@ -870,6 +912,21 @@ local function createDawnHubGUI()
 
     -- Set initial state
     switchTab("main")
+
+    -- === MINIMIZE FUNCTION ===
+    local function toggleMinimize()
+        isMinimized = not isMinimized
+        local targetSize = isMinimized and minimizedSize or fullSize
+        local targetPos = isMinimized and UDim2.new(0.5, -90, 0.5, -16) or UDim2.new(0.5, -410, 0.5, -230)
+        TweenService:Create(window, TweenInfo.new(0.2, Enum.EasingStyle.Quad), {
+            Size = targetSize,
+            Position = targetPos
+        }):Play()
+        contentContainer.Visible = not isMinimized
+        minBtn.Text = isMinimized and "+" or "−"
+    end
+
+    minBtn.MouseButton1Click:Connect(toggleMinimize)
 
     -- === START/STOP ===
     toggleBtn.MouseButton1Click:Connect(function()
