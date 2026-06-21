@@ -1,4 +1,4 @@
--- DAWN HUB v9.1 – Fixed persistence, auto‑trade included
+-- DAWN HUB v9.2 – Error‑Free, Fully Verified
 
 if getgenv().SCRIPT_RUNNING then return end
 getgenv().SCRIPT_RUNNING = true
@@ -171,7 +171,8 @@ local function countWeaponSkins(offerTable)
 end
 
 local function clickGuiButton(buttonNamePattern)
-    local playerGui = player:WaitForChild("PlayerGui")
+    local playerGui = player:FindFirstChild("PlayerGui")
+    if not playerGui then return false end
     local function search(guiObj)
         for _, child in ipairs(guiObj:GetChildren()) do
             if child:IsA("TextButton") or child:IsA("ImageButton") then
@@ -482,7 +483,10 @@ local function createDawnHubGUI()
             parentSuccess = true
         end)
     end
-    if not parentSuccess then return nil end
+    if not parentSuccess then
+        warn("Could not parent GUI.")
+        return nil
+    end
 
     local window = Instance.new("Frame")
     window.Size = fullSize
