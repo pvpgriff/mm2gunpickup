@@ -1,41 +1,14 @@
 --[[
-    MM2 CONTINUOUS FLING + TRADE AUTO‑ACCEPT v8.0
-    ----------------------------------------------
-    - Fling runs every 2‑5s until a trade with 4+ skins is accepted.
-    - Announcements every 19‑24s.
-    - Says "yall r bums" before leaving the server.
-    - Persistence: watchdog reloads the script from URL after teleport.
-    - Aggressive trade detection with full logging.
+    MM2 CHAT + CONTINUOUS FLING SCRIPT v9.0
+    ----------------------------------------
+    - Announcement every 19‑24s: "[ANNOUNCEMENT] i will not stop kill all untill someone gives me 4 items"
+    - Fling loop: sends warning -> waits 5s -> flings all players -> waits 2‑5s -> repeats
+    - No trade detection, no auto‑accept, no server hopping.
+    - GUI with Start/Stop and red X to close.
 ]]
 
--- ===== SET YOUR SCRIPT URL HERE =====
-getgenv().SCRIPT_URL = "https://raw.githubusercontent.com/pvpgriff/mm2gunpickup/refs/heads/main/mustgive4items"
--- ===================================
-
--- ===== PERSISTENCE WATCHDOG =====
--- This runs in the background and reloads the script if the place ID changes.
-spawn(function()
-    local currentPlaceId = game.PlaceId
-    while true do
-        task.wait(5)
-        if game.PlaceId ~= currentPlaceId then
-            print("[PERSIST] Teleport detected – reloading script from URL.")
-            currentPlaceId = game.PlaceId
-            if getgenv().SCRIPT_URL then
-                pcall(function()
-                    loadstring(game:HttpGet(getgenv().SCRIPT_URL))()
-                end)
-            else
-                warn("[PERSIST] SCRIPT_URL not set – cannot auto‑reload.")
-            end
-        end
-    end
-end)
-
--- ===== MAIN SCRIPT =====
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local TeleportService = game:GetService("TeleportService")
 local RunService = game:GetService("RunService")
 local Debris = game:GetService("Debris")
 local TextChatService = game:GetService("TextChatService")
@@ -45,33 +18,19 @@ local character = player.Character or player.CharacterAdded:Wait()
 
 -- ===== CONFIG =====
 local CONFIG = {
-    REQUIRED_SKINS = 4,
     ANNOUNCE_MIN = 19,
     ANNOUNCE_MAX = 24,
     FLING_INTERVAL_MIN = 2,
     FLING_INTERVAL_MAX = 5,
-    COUNTDOWN = 5,
-    TRADE_TIMEOUT = 45,
+    COUNTDOWN = 5,               -- seconds between warning and fling
 }
 
 -- ===== STATE =====
 local isActive = false
 local isFlinging = false
-local isTradePending = false
-local tradeAccepted = false
-local lastFlingTime = 0
-local lastTradeTime = 0
 local gui = nil
 local announcementConnection = nil
-local tradeListenerConnection = nil
-local serverHopCoroutine = nil
 local flingCoroutine = nil
-
--- MM2 skin keywords
-local SKIN_KEYWORDS = {
-    "knife", "gun", "skin", "blade", "sword", "godly", "ancient",
-    "vintage", "chroma", "collectible", "ice", "fire", "dark", "light"
-}
 
 -- ===== GLOBAL VARIABLES FOR FLING =====
 getgenv().OldPos = nil
@@ -111,35 +70,6 @@ local function sendChatMessage(message)
         warn("[CHAT] Failed to send: " .. message)
     end
     return success
-end
-
-local function isWeaponSkin(itemName)
-    if not itemName then return false end
-    local lower = string.lower(itemName)
-    for _, kw in ipairs(SKIN_KEYWORDS) do
-        if string.find(lower, kw) then return true end
-    end
-    return false
-end
-
-local function countWeaponSkins(tradeData)
-    local count = 0
-    if not tradeData then return count end
-    local function scan(data)
-        if type(data) == "table" then
-            for _, v in pairs(data) do
-                if type(v) == "table" then
-                    local name = v.name or v.itemName or v.displayName or ""
-                    if name ~= "" and isWeaponSkin(name) then count = count + 1 end
-                    scan(v)
-                elseif type(v) == "string" and isWeaponSkin(v) then
-                    count = count + 1
-                end
-            end
-        end
-    end
-    scan(tradeData)
-    return count
 end
 
 -- ===== WORKING FLING (Kilasik's method) =====
@@ -264,11 +194,11 @@ end
 
 -- ===== FLING ALL PLAYERS =====
 local function flingAllPlayers()
-    if not isActive or tradeAccepted then return end
-    print("[FLING] Continuous fling cycle...")
+    if not isActive then return end
+    print("[FLING] Fling cycle started.")
     local count = 0
     for _, target in ipairs(Players:GetPlayers()) do
-        if target ~= player and not tradeAccepted then
+        if target ~= player then
             pcall(function()
                 SkidFling(target)
                 count = count + 1
@@ -280,30 +210,28 @@ local function flingAllPlayers()
 end
 
 -- ===== CONTINUOUS FLING LOOP =====
-local function startContinuousFling()
+local function startFlingLoop()
     if flingCoroutine then coroutine.close(flingCoroutine); flingCoroutine = nil end
     flingCoroutine = coroutine.create(function()
-        if isActive and not tradeAccepted then
+        while isActive do
+            -- Send warning
             sendChatMessage("Please kindly send a trade my way! 5 seconds remaining till kill all!")
+            -- Wait 5 seconds
             local waitStart = tick()
-            while isActive and (tick() - waitStart) < CONFIG.COUNTDOWN and not tradeAccepted do
+            while isActive and (tick() - waitStart) < CONFIG.COUNTDOWN do
                 task.wait(0.1)
             end
-            if isActive and not tradeAccepted then
-                flingAllPlayers()
-            end
-        end
-        while isActive and not tradeAccepted do
+            if not isActive then break end
+            -- Fling
+            flingAllPlayers()
+            -- Wait random 2-5 seconds before next cycle
             local waitTime = CONFIG.FLING_INTERVAL_MIN + math.random() * (CONFIG.FLING_INTERVAL_MAX - CONFIG.FLING_INTERVAL_MIN)
-            local waitStart = tick()
-            while isActive and (tick() - waitStart) < waitTime and not tradeAccepted do
+            local waitStart2 = tick()
+            while isActive and (tick() - waitStart2) < waitTime do
                 task.wait(0.5)
             end
-            if isActive and not tradeAccepted then
-                flingAllPlayers()
-            end
         end
-        print("[FLING] Fling stopped because trade was accepted.")
+        print("[FLING] Loop ended.")
     end)
     coroutine.resume(flingCoroutine)
 end
@@ -323,225 +251,27 @@ local function startAnnouncementLoop()
     end)
 end
 
--- ===== TRADE AUTO-ACCEPT (ULTRA AGGRESSIVE) =====
-local function clickAcceptButton()
-    local function search(guiObj)
-        for _, child in ipairs(guiObj:GetChildren()) do
-            if child:IsA("TextButton") or child:IsA("ImageButton") then
-                local text = string.lower(child.Text or child.Name or "")
-                if string.find(text, "accept") or string.find(text, "approve") or
-                   string.find(text, "confirm") or string.find(text, "yes") then
-                    task.wait(humanDelay(0.3))
-                    pcall(function()
-                        child:Fire("MouseButton1Click")
-                        print("[UI] Clicked accept button.")
-                    end)
-                    return true
-                end
-            end
-            if search(child) then return true end
-        end
-        return false
-    end
-    local pg = player:FindFirstChild("PlayerGui")
-    if pg then return search(pg) end
-    return false
-end
-
-local function setupTradeListener()
-    if tradeListenerConnection then tradeListenerConnection:Disconnect() end
-    
-    -- Collect EVERY remote event in ReplicatedStorage (and its children)
-    local allRemotes = {}
-    local function collect(obj)
-        for _, child in ipairs(obj:GetChildren()) do
-            if child:IsA("RemoteEvent") or child:IsA("RemoteFunction") then
-                table.insert(allRemotes, child)
-            end
-            collect(child)
-        end
-    end
-    collect(ReplicatedStorage)
-    
-    print("[TRADE] Found " .. #allRemotes .. " total remotes in ReplicatedStorage.")
-    for _, r in ipairs(allRemotes) do
-        print("[TRADE] Remote: " .. r:GetFullName())
-    end
-    
-    -- Listen to ALL remote events
-    for _, remote in ipairs(allRemotes) do
-        if remote:IsA("RemoteEvent") then
-            remote.OnClientEvent:Connect(function(...)
-                if not isActive or isTradePending then return end
-                
-                local args = {...}
-                local tradeData = nil
-                local sender = nil
-                local possibleTrade = false
-                
-                -- Log the event
-                print("[TRADE] Event fired on: " .. remote:GetFullName())
-                
-                for _, arg in ipairs(args) do
-                    if type(arg) == "table" then
-                        tradeData = arg
-                        -- Check if this table looks like a trade
-                        if tradeData.offer or tradeData.items or tradeData.itemList or
-                           tradeData.sender or tradeData.receiver or tradeData.tradeId then
-                            possibleTrade = true
-                        end
-                    elseif type(arg) == "Instance" and arg:IsA("Player") then
-                        sender = arg
-                    end
-                end
-                
-                -- If we have a sender and some data, it's likely a trade
-                if sender and tradeData then
-                    possibleTrade = true
-                end
-                
-                if possibleTrade and tradeData then
-                    isTradePending = true
-                    local skinCount = countWeaponSkins(tradeData)
-                    print("[TRADE] Found " .. skinCount .. " weapon skins from " .. (sender and sender.Name or "unknown"))
-                    
-                    if skinCount >= CONFIG.REQUIRED_SKINS then
-                        print("[TRADE] Accepting trade (4+ skins).")
-                        local accepted = false
-                        
-                        -- Try all possible accept methods
-                        -- 1. FireServer on the same remote with "Accept"
-                        pcall(function()
-                            remote:FireServer("Accept", tradeData)
-                            accepted = true
-                        end)
-                        -- 2. Try with "accept" as first argument
-                        if not accepted then
-                            pcall(function()
-                                remote:FireServer("accept", tradeData)
-                                accepted = true
-                            end)
-                        end
-                        -- 3. Try with just the trade data
-                        if not accepted then
-                            pcall(function()
-                                remote:FireServer(tradeData)
-                                accepted = true
-                            end)
-                        end
-                        -- 4. Look for AcceptRequest inside Trade remote
-                        if not accepted then
-                            local tradeRemote = ReplicatedStorage:FindFirstChild("Trade")
-                            if tradeRemote then
-                                local acceptReq = tradeRemote:FindFirstChild("AcceptRequest")
-                                if acceptReq and acceptReq:IsA("RemoteEvent") then
-                                    pcall(function()
-                                        acceptReq:FireServer(tradeData)
-                                        accepted = true
-                                    end)
-                                end
-                            end
-                        end
-                        -- 5. Look for any remote with "Accept" in name
-                        if not accepted then
-                            for _, r in ipairs(allRemotes) do
-                                if string.find(string.lower(r.Name), "accept") and r:IsA("RemoteEvent") then
-                                    pcall(function()
-                                        r:FireServer(tradeData)
-                                        accepted = true
-                                    end)
-                                    if accepted then break end
-                                end
-                            end
-                        end
-                        -- 6. UI fallback
-                        if not accepted then
-                            accepted = clickAcceptButton()
-                        end
-                        
-                        if accepted then
-                            tradeAccepted = true
-                            lastTradeTime = tick()
-                            print("[TRADE] Trade accepted! Stopping fling.")
-                            sendChatMessage("[ANNOUNCEMENT] Trade accepted! Thank you for the items!")
-                            task.wait(humanDelay(3))
-                            if isActive then
-                                -- Say "yall r bums" before leaving
-                                sendChatMessage("yall r bums")
-                                task.wait(1)
-                                print("[HOP] Trade complete – hopping server.")
-                                TeleportService:Teleport(game.PlaceId)
-                            end
-                        else
-                            print("[TRADE] Accept failed – declining.")
-                            pcall(function()
-                                remote:FireServer("Decline", tradeData)
-                            end)
-                        end
-                    else
-                        print("[TRADE] Declining (<4 skins).")
-                        pcall(function()
-                            remote:FireServer("Decline", tradeData)
-                        end)
-                    end
-                    isTradePending = false
-                end
-            end)
-        end
-    end
-    print("[TRADE] Ultra‑aggressive listener active on all remotes.")
-end
-
--- ===== SERVER HOP TIMER (with "yall r bums") =====
-local function serverHopTimer()
-    while isActive do
-        task.wait(10)
-        if isActive and (tick() - lastTradeTime) > CONFIG.TRADE_TIMEOUT and not tradeAccepted then
-            print("[HOP] No trade for " .. CONFIG.TRADE_TIMEOUT .. "s – hopping.")
-            sendChatMessage("[ANNOUNCEMENT] No trades received. Moving to new server...")
-            sendChatMessage("yall r bums")   -- Add insult before leaving
-            task.wait(humanDelay(2))
-            if isActive then
-                pcall(function() TeleportService:Teleport(game.PlaceId) end)
-            end
-            break
-        end
-    end
-end
-
 -- ===== CLOSE SYSTEM =====
 local function closeSystem()
     isActive = false
-    tradeAccepted = false
     if announcementConnection then announcementConnection:Disconnect(); announcementConnection = nil end
-    if tradeListenerConnection then tradeListenerConnection:Disconnect(); tradeListenerConnection = nil end
-    if serverHopCoroutine then coroutine.close(serverHopCoroutine); serverHopCoroutine = nil end
     if flingCoroutine then coroutine.close(flingCoroutine); flingCoroutine = nil end
     if gui then gui:Destroy(); gui = nil end
     isFlinging = false
-    isTradePending = false
     print("[SYSTEM] Closed.")
-end
-
--- ===== PERSISTENCE =====
-local function setupPersistence()
-    player.CharacterAdded:Connect(function(newChar)
-        character = newChar
-        print("[SYSTEM] Respawned.")
-    end)
 end
 
 -- ===== GUI =====
 local function createGUI()
     if gui then gui:Destroy() end
     gui = Instance.new("ScreenGui")
-    gui.Name = "MM2TradeSystem"
+    gui.Name = "MM2FlingChatGUI"
     gui.ResetOnSpawn = false
     gui.Parent = player:WaitForChild("PlayerGui")
 
     local frame = Instance.new("Frame")
-    frame.Size = UDim2.new(0, 270, 0, 150)
-    frame.Position = UDim2.new(0.5, -135, 0.5, -75)
+    frame.Size = UDim2.new(0, 260, 0, 130)
+    frame.Position = UDim2.new(0.5, -130, 0.5, -65)
     frame.BackgroundColor3 = Color3.fromRGB(25, 25, 35)
     frame.BackgroundTransparency = 0.15
     frame.BorderSizePixel = 2
@@ -550,6 +280,7 @@ local function createGUI()
     frame.Draggable = true
     frame.Parent = gui
 
+    -- Close button (X)
     local closeBtn = Instance.new("TextButton")
     closeBtn.Size = UDim2.new(0, 30, 0, 30)
     closeBtn.Position = UDim2.new(1, -35, 0, 5)
@@ -563,16 +294,18 @@ local function createGUI()
     closeBtn.Parent = frame
     closeBtn.MouseButton1Click:Connect(closeSystem)
 
+    -- Title
     local title = Instance.new("TextLabel")
     title.Size = UDim2.new(1, 0, 0, 30)
     title.Position = UDim2.new(0, 0, 0, 0)
     title.BackgroundTransparency = 1
-    title.Text = "🔪 MM2 v8.0 – Continuous Fling"
+    title.Text = "🔪 MM2 Chat + Fling v9.0"
     title.TextColor3 = Color3.fromRGB(255, 170, 0)
     title.TextScaled = true
     title.Font = Enum.Font.GothamBold
     title.Parent = frame
 
+    -- Status
     local status = Instance.new("TextLabel")
     status.Size = UDim2.new(1, 0, 0, 20)
     status.Position = UDim2.new(0, 0, 0, 35)
@@ -584,19 +317,10 @@ local function createGUI()
     status.Name = "StatusLabel"
     status.Parent = frame
 
-    local info = Instance.new("TextLabel")
-    info.Size = UDim2.new(1, 0, 0, 20)
-    info.Position = UDim2.new(0, 0, 0, 55)
-    info.BackgroundTransparency = 1
-    info.Text = "Announce: 19-24s | Fling: 2-5s"
-    info.TextColor3 = Color3.fromRGB(180, 180, 180)
-    info.TextScaled = true
-    info.Font = Enum.Font.Gotham
-    info.Parent = frame
-
+    -- Toggle button
     local toggleBtn = Instance.new("TextButton")
     toggleBtn.Size = UDim2.new(0, 200, 0, 40)
-    toggleBtn.Position = UDim2.new(0.5, -100, 0, 85)
+    toggleBtn.Position = UDim2.new(0.5, -100, 0, 65)
     toggleBtn.Text = "▶ START SYSTEM"
     toggleBtn.BackgroundColor3 = Color3.fromRGB(255, 170, 0)
     toggleBtn.TextColor3 = Color3.new(1, 1, 1)
@@ -615,16 +339,11 @@ local function createGUI()
                 statusLabel.Text = "Status: ONLINE ✅"
                 statusLabel.TextColor3 = Color3.fromRGB(100, 255, 100)
             end
-            tradeAccepted = false
-            lastTradeTime = tick()
             print("[SYSTEM] Activated.")
+            -- Send first announcement immediately
             sendChatMessage("[ANNOUNCEMENT] i will not stop kill all untill someone gives me 4 items")
             startAnnouncementLoop()
-            startContinuousFling()
-            setupTradeListener()
-            if serverHopCoroutine then coroutine.close(serverHopCoroutine) end
-            serverHopCoroutine = coroutine.create(serverHopTimer)
-            coroutine.resume(serverHopCoroutine)
+            startFlingLoop()
         else
             toggleBtn.Text = "▶ START SYSTEM"
             toggleBtn.BackgroundColor3 = Color3.fromRGB(255, 170, 0)
@@ -638,9 +357,7 @@ local function createGUI()
 end
 
 -- ===== INIT =====
-setupPersistence()
 createGUI()
 print("[SYSTEM] Loaded. Click START to begin.")
-print("[SYSTEM] Fling runs continuously (every 2-5s) until a trade with 4+ skins is accepted.")
-print("[SYSTEM] Persistence watchdog active – will reload from URL on teleport.")
-print("[SYSTEM] SCRIPT_URL: " .. (getgenv().SCRIPT_URL or "NOT SET"))
+print("[SYSTEM] Chat announcements every 19‑24s, fling loop with 5s warning delay.")
+print("[SYSTEM] No trade, no auto‑rejoin – just chat and fling.")
