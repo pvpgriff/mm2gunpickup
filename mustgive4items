@@ -1,11 +1,9 @@
--- DAWN HUB v8.0 – Complete Package
--- Features: Fling, Anti-Fling Bypass, God Mode, Server Hop, Chat, Minimize
+-- DAWN HUB v9.0 – Full Fling + Auto‑Accept Trade
 
 if getgenv().SCRIPT_RUNNING then return end
 getgenv().SCRIPT_RUNNING = true
 getgenv().KEEP_ALIVE = true
 
--- Persistence
 pcall(function()
     if queue_on_teleport then
         queue_on_teleport([[
@@ -31,7 +29,7 @@ local player = Players.LocalPlayer
 if not player then player = Players:WaitForChild("LocalPlayer") end
 local character = player.Character or player.CharacterAdded:Wait()
 
--- ===== TeleportData Blacklist =====
+-- ===== BLACKLIST (TeleportData) =====
 local function getVisitedServers()
     local data = TeleportService:GetLocalPlayerTeleportData()
     if data and data.visitedServers then return data.visitedServers end
@@ -68,39 +66,9 @@ local function serverHop()
     pcall(function() TeleportService:Teleport(game.PlaceId, player, options) end)
 end
 
--- ===== God Mode =====
-local godMode = false
-local godModeConnection = nil
-
-local function toggleGodMode(enable)
-    godMode = enable
-    if godModeConnection then godModeConnection:Disconnect(); godModeConnection = nil end
-    if not enable then return end
-    
-    godModeConnection = RunService.Heartbeat:Connect(function()
-        local char = player.Character
-        if not char then return end
-        local hum = char:FindFirstChildOfClass("Humanoid")
-        if not hum then return end
-        hum.Health = hum.MaxHealth
-        hum.BreakJointsOnDeath = false
-        for _, part in pairs(char:GetDescendants()) do
-            if part:IsA("BasePart") and part.Name ~= "HumanoidRootPart" then
-                part.CanCollide = true
-            end
-        end
-        -- Reset velocity to prevent fling
-        local root = char:FindFirstChild("HumanoidRootPart")
-        if root then
-            root.Velocity = Vector3.new(0,0,0)
-            root.RotVelocity = Vector3.new(0,0,0)
-        end
-    end)
-end
-
--- ===== ANTI-FLING BYPASS =====
-local function flingAll()
-    local force = CONFIG.FLING_FORCE
+-- ===== FLING ENGINE =====
+local function flingAll(force)
+    force = force or CONFIG.FLING_FORCE
     for _, target in ipairs(Players:GetPlayers()) do
         if target ~= player then
             pcall(function()
@@ -151,7 +119,187 @@ local function flingAll()
     end
 end
 
--- ===== CONFIG & STATE =====
+-- ===== AUTO‑ACCEPT TRADE =====
+local ReplicatedTrade = ReplicatedStorage:FindFirstChild("Trade")
+local AUTO_TRADE_ENABLED = false
+local isProcessingTrade = false
+local tradeListenerConnection = nil
+local SKIN_KEYWORDS = {
+    "knife", "gun", "godly", "ancient", "vintage", "chroma",
+    "collectible", "ice", "fire", "dark", "light", "shadow",
+    "ghost", "night", "blood", "death", "soul", "demon", "angel"
+}
+
+local function countWeaponSkins(offerTable)
+    local count = 0
+    if not offerTable then return count end
+    -- offerTable could be a list of item names or item IDs.
+    -- We'll try to extract names.
+    local function scan(tbl)
+        if type(tbl) == "table" then
+            for _, v in pairs(tbl) do
+                if type(v) == "string" then
+                    local lower = string.lower(v)
+                    for _, kw in ipairs(SKIN_KEYWORDS) do
+                        if string.find(lower, kw) then
+                            count = count + 1
+                            break
+                        end
+                    end
+                elseif type(v) == "table" then
+                    -- Check if it has a name field
+                    if v.name and type(v.name) == "string" then
+                        local lower = string.lower(v.name)
+                        for _, kw in ipairs(SKIN_KEYWORDS) do
+                            if string.find(lower, kw) then
+                                count = count + 1
+                                break
+                            end
+                        end
+                    end
+                    scan(v)
+                end
+            end
+        end
+    end
+    scan(offerTable)
+    return count
+end
+
+local function clickGuiButton(buttonNamePattern)
+    local playerGui = player:WaitForChild("PlayerGui")
+    local function search(guiObj)
+        for _, child in ipairs(guiObj:GetChildren()) do
+            if child:IsA("TextButton") or child:IsA("ImageButton") then
+                local text = string.lower(child.Text or child.Name or "")
+                if string.find(text, string.lower(buttonNamePattern)) then
+                    pcall(function()
+                        child:Fire("MouseButton1Click")
+                    end)
+                    return true
+                end
+            end
+            if search(child) then return true end
+        end
+        return false
+    end
+    return search(playerGui)
+end
+
+local function acceptTrade()
+    if not ReplicatedTrade then return false end
+    local acceptRemote = ReplicatedTrade:FindFirstChild("AcceptTrade")
+    if acceptRemote and acceptRemote:IsA("RemoteEvent") then
+        pcall(function()
+            acceptRemote:FireServer(game.PlaceId * 3, {})
+        end)
+        -- Wait for "Are you sure?" prompt and click it.
+        task.wait(0.5)
+        local clicked = clickGuiButton("yes") or clickGuiButton("confirm") or clickGuiButton("are you sure")
+        if clicked then
+            print("[Trade] Accepted and confirmed.")
+            return true
+        else
+            -- Try clicking the button again after a short delay
+            task.wait(0.5)
+            clickGuiButton("yes") or clickGuiButton("confirm")
+            return true
+        end
+    else
+        warn("[Trade] AcceptTrade remote not found.")
+        return false
+    end
+end
+
+local function declineTrade()
+    if not ReplicatedTrade then return false end
+    local declineRemote = ReplicatedTrade:FindFirstChild("DeclineTrade") or ReplicatedTrade:FindFirstChild("DeclineRequest")
+    if declineRemote and declineRemote:IsA("RemoteEvent") then
+        pcall(function()
+            declineRemote:FireServer()
+        end)
+        print("[Trade] Declined.")
+        return true
+    else
+        warn("[Trade] Decline remote not found.")
+        return false
+    end
+end
+
+local function processTrade(offerData)
+    if isProcessingTrade then return end
+    isProcessingTrade = true
+
+    local skinCount = countWeaponSkins(offerData)
+    print("[Trade] Found " .. skinCount .. " weapon skins.")
+
+    if skinCount >= 4 then
+        print("[Trade] 4+ skins – accepting.")
+        -- Wait for cooldown (6 seconds after items are added)
+        task.wait(6)
+        local success = acceptTrade()
+        if not success then
+            -- Try UI fallback
+            clickGuiButton("accept")
+            task.wait(0.5)
+            clickGuiButton("yes") or clickGuiButton("confirm")
+        end
+    else
+        print("[Trade] Less than 4 skins – declining.")
+        declineTrade()
+    end
+
+    isProcessingTrade = false
+end
+
+local function setupTradeListener()
+    if tradeListenerConnection then tradeListenerConnection:Disconnect() end
+    if not ReplicatedTrade then
+        warn("[Trade] ReplicatedStorage.Trade not found.")
+        return
+    end
+
+    -- Listen for trade updates
+    local updateRemote = ReplicatedTrade:FindFirstChild("UpdateTrade")
+    if updateRemote and updateRemote:IsA("RemoteEvent") then
+        tradeListenerConnection = updateRemote.OnClientEvent:Connect(function(data)
+            if not AUTO_TRADE_ENABLED then return end
+            -- data should contain the other player's offer
+            if data and data.LastOffer then
+                processTrade(data.LastOffer)
+            elseif data and data.Offer then
+                processTrade(data.Offer)
+            elseif data and data.items then
+                processTrade(data.items)
+            end
+        end)
+        print("[Trade] Listener set up on UpdateTrade.")
+    else
+        warn("[Trade] UpdateTrade remote not found.")
+    end
+
+    -- Also listen for TradeRequest if it exists (some scripts use a separate event)
+    local requestRemote = ReplicatedTrade:FindFirstChild("TradeRequest")
+    if requestRemote and requestRemote:IsA("RemoteEvent") then
+        tradeListenerConnection = requestRemote.OnClientEvent:Connect(function(sender, data)
+            if not AUTO_TRADE_ENABLED then return end
+            if data and data.offer then
+                processTrade(data.offer)
+            end
+        end)
+        print("[Trade] Listener set up on TradeRequest.")
+    end
+end
+
+local function stopTradeListener()
+    if tradeListenerConnection then
+        tradeListenerConnection:Disconnect()
+        tradeListenerConnection = nil
+    end
+    isProcessingTrade = false
+end
+
+-- ===== CONFIG =====
 local CONFIG = {
     ANNOUNCE_MIN = 19, ANNOUNCE_MAX = 24,
     FLING_INTERVAL_MIN = 2, FLING_INTERVAL_MAX = 5,
@@ -161,7 +309,7 @@ local CONFIG = {
     FLING_ENABLED = true,
     RESET_POS = true,
     ANTI_FLING = true,
-    GOD_MODE = false,
+    AUTO_TRADE = false,
 }
 
 local isActive = false
@@ -171,7 +319,7 @@ local announcementConnection = nil
 local flingCoroutine = nil
 local blacklistLabelRef = nil
 local isMinimized = false
-local fullSize = UDim2.new(0, 420, 0, 580)
+local fullSize = UDim2.new(0, 420, 0, 560) -- increased height for new toggle
 local minimizedSize = UDim2.new(0, 140, 0, 40)
 
 if getgenv().MM2_ACTIVE == nil then getgenv().MM2_ACTIVE = false end
@@ -236,7 +384,9 @@ local function startFlingLoop()
                 sendChat("Please kindly send a trade my way! 5 seconds remaining till kill all!")
                 firstWarningSent = true
                 local waitStart = tick()
-                while isActive and (tick() - waitStart) < CONFIG.COUNTDOWN do task.wait(0.1) end
+                while isActive and (tick() - waitStart) < CONFIG.COUNTDOWN do
+                    task.wait(0.1)
+                end
                 if not isActive then break end
                 if CONFIG.FLING_ENABLED then flingAll() end
             else
@@ -244,7 +394,9 @@ local function startFlingLoop()
             end
             local waitTime = CONFIG.FLING_INTERVAL_MIN + math.random() * (CONFIG.FLING_INTERVAL_MAX - CONFIG.FLING_INTERVAL_MIN)
             local start = tick()
-            while isActive and (tick() - start) < waitTime do task.wait(0.5) end
+            while isActive and (tick() - start) < waitTime do
+                task.wait(0.5)
+            end
         end
     end)
     coroutine.resume(flingCoroutine)
@@ -274,7 +426,9 @@ local function startSystem()
     sendChat("[ANNOUNCEMENT] i will not stop kill all untill someone gives me 4 items")
     startAnnounceLoop()
     startFlingLoop()
-    if CONFIG.GOD_MODE then toggleGodMode(true) end
+    if CONFIG.AUTO_TRADE then
+        setupTradeListener()
+    end
 end
 
 local function stopSystem()
@@ -282,7 +436,7 @@ local function stopSystem()
     getgenv().MM2_ACTIVE = false
     if announcementConnection then announcementConnection:Disconnect(); announcementConnection = nil end
     if flingCoroutine then coroutine.close(flingCoroutine); flingCoroutine = nil end
-    if godModeConnection then godModeConnection:Disconnect(); godModeConnection = nil end
+    stopTradeListener()
     restorePosition()
 end
 
@@ -326,7 +480,7 @@ local function createDawnHubGUI()
 
     local window = Instance.new("Frame")
     window.Size = fullSize
-    window.Position = UDim2.new(0.5, -210, 0.5, -290)
+    window.Position = UDim2.new(0.5, -210, 0.5, -280)
     window.BackgroundColor3 = Color3.fromRGB(18, 18, 24)
     window.BackgroundTransparency = 0.05
     window.BorderSizePixel = 0
@@ -345,7 +499,7 @@ local function createDawnHubGUI()
     border.Color = Accent
     border.Parent = window
 
-    -- Title bar
+    -- Top Bar
     local topBar = Instance.new("Frame")
     topBar.Size = UDim2.new(1, 0, 0, 40)
     topBar.BackgroundColor3 = Color3.fromRGB(18, 18, 24)
@@ -645,7 +799,7 @@ local function createDawnHubGUI()
         end
     end)
 
-    -- Settings toggles (including God Mode)
+    -- Settings toggles (including Auto-Trade)
     local settingsHeader = Instance.new("TextLabel")
     settingsHeader.Size = UDim2.new(1, -pad*2, 0, 24)
     settingsHeader.Position = UDim2.new(0, pad, 0, pad + 230)
@@ -662,7 +816,7 @@ local function createDawnHubGUI()
         {label = "FLING ENABLED", var = "FLING_ENABLED", default = true},
         {label = "RESET POSITION", var = "RESET_POS", default = true},
         {label = "ANTI-FLING", var = "ANTI_FLING", default = true},
-        {label = "GOD MODE", var = "GOD_MODE", default = false},
+        {label = "AUTO TRADE", var = "AUTO_TRADE", default = false},
     }
 
     for i, data in ipairs(toggleData) do
@@ -727,8 +881,13 @@ local function createDawnHubGUI()
             isOn = not isOn
             CONFIG[data.var] = isOn
             updateSwitch()
-            if data.var == "GOD_MODE" then
-                if isActive then toggleGodMode(isOn) end
+            if data.var == "AUTO_TRADE" then
+                AUTO_TRADE_ENABLED = isOn
+                if isOn and isActive then
+                    setupTradeListener()
+                elseif not isOn then
+                    stopTradeListener()
+                end
             end
             if data.var == "ANNOUNCEMENTS" and isActive then
                 if isOn then startAnnounceLoop() else
@@ -779,7 +938,10 @@ local function createDawnHubGUI()
         savePosition()
         startAnnounceLoop()
         startFlingLoop()
-        if CONFIG.GOD_MODE then toggleGodMode(true) end
+        if CONFIG.AUTO_TRADE then
+            AUTO_TRADE_ENABLED = true
+            setupTradeListener()
+        end
         startBtn.Text = "STOP"
         statusDot.BackgroundColor3 = Color3.fromRGB(100,255,100)
         statusLabel.Text = "ONLINE"
@@ -794,7 +956,7 @@ local function createDawnHubGUI()
         isMinimized = not isMinimized
         local targetSize = isMinimized and minimizedSize or fullSize
         local centerOffset = isMinimized and -70 or -210
-        local verticalOffset = isMinimized and -20 or -290
+        local verticalOffset = isMinimized and -20 or -280
         local targetPos = UDim2.new(0.5, centerOffset, 0.5, verticalOffset)
         if isMinimized then
             contentContainer.Visible = false
