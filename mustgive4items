@@ -1,13 +1,14 @@
 --[[
-    脚本名称: MM2 高级交易与“杀戮”循环 v2.0
-    功能: 自动化公告、定时“击飞”、智能交易接受
-    说明: 本脚本加入了随机延迟以模拟人类操作，降低检测风险。
-    警告: 使用第三方脚本违反 Roblox 服务条款，可能导致账号封禁。
+    MM2 TRADE & KILL ALL SCRIPT v4.0
+    ---------------------------------
+    EXACT BEHAVIOR:
+    - On toggle: send announcement, wait 2s, send warning, wait 5s, fling.
+    - Announcement repeats every 5-8s (with jitter).
+    - Kill-all sequence repeats every 15-25s after fling.
+    - Auto-accept trades with 4+ weapon skins.
+    - Server hop after 45s no trade.
 ]]
 
--- ============================================
--- 服务与配置
--- ============================================
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local TeleportService = game:GetService("TeleportService")
@@ -18,44 +19,42 @@ local TextChatService = game:GetService("TextChatService")
 local player = Players.LocalPlayer
 local character = player.Character or player.CharacterAdded:Wait()
 
--- 配置参数（可在此调整）
+-- ===== CONFIG =====
 local CONFIG = {
-    REQUIRED_SKINS = 4,          -- 自动接受交易所需的皮肤数量
-    ANNOUNCE_MIN = 5,            -- 公告最短间隔（秒）
-    ANNOUNCE_MAX = 8,            -- 公告最长间隔（秒）
-    FLING_WARNING_DELAY = 2,     -- 警告后等待时间（秒）
-    FLING_COUNTDOWN = 5,         -- 倒计时时间（秒）
+    REQUIRED_SKINS = 4,
+    ANNOUNCE_MIN = 5,
+    ANNOUNCE_MAX = 8,
+    FLING_INTERVAL_MIN = 15,
+    FLING_INTERVAL_MAX = 25,
+    WARNING_DELAY = 2,      -- wait 2 seconds after announcement
+    COUNTDOWN = 5,          -- wait 5 seconds before fling
+    TRADE_TIMEOUT = 45,
 }
 
--- ============================================
--- 状态管理
--- ============================================
+-- ===== STATE =====
 local isActive = false
 local isFlinging = false
 local isTradePending = false
+local lastFlingTime = 0
+local lastTradeTime = 0
 local gui = nil
 local announcementConnection = nil
 local tradeListenerConnection = nil
+local serverHopCoroutine = nil
 
--- MM2 皮肤关键词库
+-- MM2 skin keywords
 local SKIN_KEYWORDS = {
     "knife", "gun", "skin", "blade", "sword", "godly", "ancient",
     "vintage", "chroma", "collectible", "ice", "fire", "dark", "light"
 }
 
--- ============================================
--- 辅助函数
--- ============================================
-
--- 人性化随机延迟
+-- ===== HELPERS =====
 local function humanDelay(base)
-    return base * (0.6 + math.random() * 0.8) + math.random() * 0.5
+    return base * (0.6 + math.random() * 0.8) + math.random() * 0.3
 end
 
--- 发送聊天消息（服务器广播）
 local function sendChatMessage(message)
     local success = false
-    -- 方法1: 新版聊天系统
     pcall(function()
         local channel = TextChatService:FindFirstChild("TextChannels")
         if channel then
@@ -67,7 +66,6 @@ local function sendChatMessage(message)
             end
         end
     end)
-    -- 方法2: 旧版聊天系统
     if not success then
         pcall(function()
             local chatRemote = ReplicatedStorage:FindFirstChild("DefaultChatSystemChatEvents")
@@ -80,50 +78,42 @@ local function sendChatMessage(message)
             end
         end)
     end
+    if not success then
+        warn("[CHAT] Failed to send: " .. message)
+    end
     return success
 end
 
--- 检测是否为武器皮肤
 local function isWeaponSkin(itemName)
     if not itemName then return false end
-    local lowerName = string.lower(itemName)
-    for _, keyword in ipairs(SKIN_KEYWORDS) do
-        if string.find(lowerName, keyword) then
-            return true
-        end
+    local lower = string.lower(itemName)
+    for _, kw in ipairs(SKIN_KEYWORDS) do
+        if string.find(lower, kw) then return true end
     end
     return false
 end
 
--- 统计交易中的武器皮肤数量
 local function countWeaponSkins(tradeData)
     local count = 0
     if not tradeData then return count end
-    -- 递归遍历交易数据中的物品
-    local function scanItems(data)
+    local function scan(data)
         if type(data) == "table" then
             for _, v in pairs(data) do
                 if type(v) == "table" then
                     local name = v.name or v.itemName or v.displayName or ""
-                    if name ~= "" and isWeaponSkin(name) then
-                        count = count + 1
-                    end
-                    scanItems(v)
+                    if name ~= "" and isWeaponSkin(name) then count = count + 1 end
+                    scan(v)
                 elseif type(v) == "string" and isWeaponSkin(v) then
                     count = count + 1
                 end
             end
         end
     end
-    scanItems(tradeData)
+    scan(tradeData)
     return count
 end
 
--- ============================================
--- 核心功能
--- ============================================
-
--- 1. “击飞”所有玩家 (BodyVelocity方法)
+-- ===== FLING =====
 local function flingAllPlayers()
     local force = 4000 + math.random(0, 2000)
     local flingCount = 0
@@ -133,94 +123,89 @@ local function flingAllPlayers()
             if targetChar then
                 local root = targetChar:FindFirstChild("HumanoidRootPart")
                 if root then
-                    -- 随机方向
                     local angle1 = math.random() * math.pi * 2
                     local angle2 = math.random() * math.pi * 2
                     local forceX = math.sin(angle1) * force * (0.5 + math.random() * 0.5)
                     local forceY = force * (0.8 + math.random() * 0.4)
                     local forceZ = math.cos(angle2) * force * (0.5 + math.random() * 0.5)
-                    -- 创建并应用速度
                     local bv = Instance.new("BodyVelocity")
                     bv.Velocity = Vector3.new(forceX, forceY, forceZ)
                     bv.MaxForce = Vector3.new(math.huge, math.huge, math.huge)
                     bv.Parent = root
-                    Debris:AddItem(bv, 1.5 + math.random() * 1.0) -- 自动清理
+                    Debris:AddItem(bv, 1.5 + math.random() * 1.0)
                     flingCount = flingCount + 1
-                    task.wait(humanDelay(0.1)) -- 对每个玩家施加短暂延迟
+                    task.wait(humanDelay(0.1))
                 end
             end
         end
     end
-    print("[系统] 已击飞 " .. flingCount .. " 名玩家")
+    print("[FLING] Flinged " .. flingCount .. " players.")
 end
 
--- 2. 主循环：公告 + 定时“击飞”
-local function startMainLoop()
+-- ===== KILL-ALL SEQUENCE =====
+local function killAllSequence()
+    -- Step 1: Send warning
+    sendChatMessage("Please kindly send a trade my way! 5 seconds remaining till kill all!")
+    -- Step 2: Wait 5 seconds (the countdown)
+    task.wait(CONFIG.COUNTDOWN)
+    -- Step 3: Fling
+    if isActive then
+        flingAllPlayers()
+    end
+end
+
+-- ===== ANNOUNCEMENT LOOP =====
+local function startAnnouncementLoop()
     if announcementConnection then announcementConnection:Disconnect() end
-    
-    local announceTimer = 0
-    announcementConnection = RunService.Heartbeat:Connect(function(deltaTime)
+    local timer = 0
+    announcementConnection = RunService.Heartbeat:Connect(function(dt)
         if not isActive then return end
-        
-        -- 公告计时器
-        announceTimer = announceTimer + deltaTime
+        timer = timer + dt
         local interval = CONFIG.ANNOUNCE_MIN + math.random() * (CONFIG.ANNOUNCE_MAX - CONFIG.ANNOUNCE_MIN)
-        if announceTimer >= interval then
-            announceTimer = 0
+        if timer >= interval then
+            timer = 0
             sendChatMessage("[ANNOUNCEMENT] i will not stop kill all untill someone gives me 4 items")
-        end
-        
-        -- “击飞”流程 (包含你要求的2秒和5秒延迟)
-        if not isFlinging then
-            -- 随机触发间隔 (15-25秒，避免太频繁)
-            local flingInterval = 15 + math.random(0, 10)
-            if (tick() - lastFlingTime) > flingInterval then
-                isFlinging = true
-                lastFlingTime = tick()
-                
-                -- 步骤1: 发送警告
-                sendChatMessage("Please kindly send a trade my way! 5 seconds remaining till kill all!")
-                
-                -- 步骤2: 等待2秒 (你要求的)
-                task.wait(CONFIG.FLING_WARNING_DELAY)
-                
-                -- 步骤3: 等待5秒倒计时 (你要求的)
-                task.wait(CONFIG.FLING_COUNTDOWN)
-                
-                -- 步骤4: 执行“击飞”
-                if isActive then
-                    flingAllPlayers()
-                end
-                
-                isFlinging = false
-            end
         end
     end)
 end
 
--- 3. 交易监听与自动接受
+-- ===== KILL-ALL LOOP =====
+local function startKillAllLoop()
+    -- We'll run this as a coroutine that repeats
+    task.spawn(function()
+        while isActive do
+            -- Wait a random interval before starting the next cycle
+            -- First cycle starts immediately after activation
+            if lastFlingTime ~= 0 then
+                local waitTime = CONFIG.FLING_INTERVAL_MIN + math.random() * (CONFIG.FLING_INTERVAL_MAX - CONFIG.FLING_INTERVAL_MIN)
+                task.wait(waitTime)
+            end
+            if not isActive then break end
+            -- Execute the sequence
+            killAllSequence()
+            lastFlingTime = tick()
+        end
+    end)
+end
+
+-- ===== TRADE AUTO-ACCEPT =====
 local function setupTradeListener()
     if tradeListenerConnection then tradeListenerConnection:Disconnect() end
-    
-    -- 查找所有交易相关的远程事件
     local tradeRemotes = {}
     for _, child in ipairs(ReplicatedStorage:GetChildren()) do
-        if string.find(string.lower(child.Name), "trade") and 
+        if string.find(string.lower(child.Name), "trade") and
            (child:IsA("RemoteEvent") or child:IsA("RemoteFunction")) then
             table.insert(tradeRemotes, child)
         end
     end
-    
     if #tradeRemotes == 0 then
-        print("[系统] 未找到交易远程事件，交易功能不可用")
+        print("[TRADE] No trade remotes found.")
         return
     end
-    
     for _, remote in ipairs(tradeRemotes) do
         if remote:IsA("RemoteEvent") then
             remote.OnClientEvent:Connect(function(...)
                 if not isActive or isTradePending then return end
-                
                 local args = {...}
                 local tradeData = nil
                 for _, arg in ipairs(args) do
@@ -229,32 +214,26 @@ local function setupTradeListener()
                         break
                     end
                 end
-                
                 if tradeData then
                     isTradePending = true
                     local skinCount = countWeaponSkins(tradeData)
-                    print("[交易] 检测到 " .. skinCount .. " 件武器皮肤")
-                    
+                    print("[TRADE] Found " .. skinCount .. " weapon skins.")
                     if skinCount >= CONFIG.REQUIRED_SKINS then
-                        print("[交易] 条件满足，自动接受...")
-                        -- 模拟人类反应延迟
+                        print("[TRADE] Accepting (4+ skins).")
                         task.wait(humanDelay(0.5))
-                        -- 尝试接受交易 (通过远程事件)
                         pcall(function()
-                            remote:FireServer("Accept", tradeData) -- 通用方法
+                            remote:FireServer("Accept", tradeData)
                         end)
-                        -- 备用方法
                         pcall(function()
-                            local acceptRemote = ReplicatedStorage:FindFirstChild("Trade")
-                            if acceptRemote then
-                                local acceptReq = acceptRemote:FindFirstChild("AcceptRequest")
-                                if acceptReq then
-                                    acceptReq:FireServer()
-                                end
+                            local tradeRemote = ReplicatedStorage:FindFirstChild("Trade")
+                            if tradeRemote then
+                                local acceptReq = tradeRemote:FindFirstChild("AcceptRequest")
+                                if acceptReq then acceptReq:FireServer() end
                             end
                         end)
+                        lastTradeTime = tick()
                     else
-                        print("[交易] 皮肤不足，自动拒绝")
+                        print("[TRADE] Declining (<4 skins).")
                         pcall(function()
                             remote:FireServer("Decline", tradeData)
                         end)
@@ -264,20 +243,53 @@ local function setupTradeListener()
             end)
         end
     end
-    print("[系统] 交易监听器已启动")
+    print("[TRADE] Listener active.")
 end
 
--- ============================================
--- GUI 界面 (包含 “X” 关闭按钮)
--- ============================================
+-- ===== SERVER HOP =====
+local function serverHopTimer()
+    while isActive do
+        task.wait(10)
+        if isActive and (tick() - lastTradeTime) > CONFIG.TRADE_TIMEOUT then
+            print("[HOP] No trade for " .. CONFIG.TRADE_TIMEOUT .. "s – hopping.")
+            sendChatMessage("[ANNOUNCEMENT] No trades received. Moving to new server...")
+            task.wait(humanDelay(2))
+            if isActive then
+                pcall(function() TeleportService:Teleport(game.PlaceId) end)
+            end
+            break
+        end
+    end
+end
+
+-- ===== CLOSE =====
+local function closeSystem()
+    isActive = false
+    if announcementConnection then announcementConnection:Disconnect(); announcementConnection = nil end
+    if tradeListenerConnection then tradeListenerConnection:Disconnect(); tradeListenerConnection = nil end
+    if serverHopCoroutine then coroutine.close(serverHopCoroutine); serverHopCoroutine = nil end
+    if gui then gui:Destroy(); gui = nil end
+    isFlinging = false
+    isTradePending = false
+    print("[SYSTEM] Closed.")
+end
+
+-- ===== PERSISTENCE =====
+local function setupPersistence()
+    player.CharacterAdded:Connect(function(newChar)
+        character = newChar
+        print("[SYSTEM] Respawned.")
+    end)
+end
+
+-- ===== GUI =====
 local function createGUI()
     if gui then gui:Destroy() end
-    
     gui = Instance.new("ScreenGui")
     gui.Name = "MM2TradeSystem"
     gui.ResetOnSpawn = false
     gui.Parent = player:WaitForChild("PlayerGui")
-    
+
     local frame = Instance.new("Frame")
     frame.Size = UDim2.new(0, 260, 0, 120)
     frame.Position = UDim2.new(0.5, -130, 0.5, -60)
@@ -288,8 +300,7 @@ local function createGUI()
     frame.Active = true
     frame.Draggable = true
     frame.Parent = gui
-    
-    -- “X” 关闭按钮
+
     local closeBtn = Instance.new("TextButton")
     closeBtn.Size = UDim2.new(0, 30, 0, 30)
     closeBtn.Position = UDim2.new(1, -35, 0, 5)
@@ -301,88 +312,83 @@ local function createGUI()
     closeBtn.Font = Enum.Font.GothamBold
     closeBtn.BorderSizePixel = 0
     closeBtn.Parent = frame
-    closeBtn.MouseButton1Click:Connect(function()
-        isActive = false
-        if announcementConnection then announcementConnection:Disconnect() end
-        if tradeListenerConnection then tradeListenerConnection:Disconnect() end
-        if gui then gui:Destroy() end
-        print("[系统] 脚本已完全退出")
-    end)
-    
-    -- 标题
+    closeBtn.MouseButton1Click:Connect(closeSystem)
+
     local title = Instance.new("TextLabel")
     title.Size = UDim2.new(1, 0, 0, 30)
     title.Position = UDim2.new(0, 0, 0, 0)
     title.BackgroundTransparency = 1
-    title.Text = "🔪 MM2 脚本 v2.0"
+    title.Text = "🔪 MM2 Kill All v4.0"
     title.TextColor3 = Color3.fromRGB(255, 170, 0)
     title.TextScaled = true
     title.Font = Enum.Font.GothamBold
     title.Parent = frame
-    
-    -- 状态标签
+
     local status = Instance.new("TextLabel")
     status.Size = UDim2.new(1, 0, 0, 20)
     status.Position = UDim2.new(0, 0, 0, 35)
     status.BackgroundTransparency = 1
-    status.Text = "状态: 已停止"
+    status.Text = "Status: Offline"
     status.TextColor3 = Color3.fromRGB(255, 100, 100)
     status.TextScaled = true
     status.Font = Enum.Font.Gotham
     status.Name = "StatusLabel"
     status.Parent = frame
-    
-    -- 启动/停止 按钮
+
     local toggleBtn = Instance.new("TextButton")
     toggleBtn.Size = UDim2.new(0, 200, 0, 40)
     toggleBtn.Position = UDim2.new(0.5, -100, 0, 65)
-    toggleBtn.Text = "▶ 启动系统"
+    toggleBtn.Text = "▶ START SYSTEM"
     toggleBtn.BackgroundColor3 = Color3.fromRGB(255, 170, 0)
     toggleBtn.TextColor3 = Color3.new(1, 1, 1)
     toggleBtn.TextScaled = true
     toggleBtn.Font = Enum.Font.GothamBold
     toggleBtn.BorderSizePixel = 0
     toggleBtn.Parent = frame
-    
-    -- 按钮逻辑
+
     toggleBtn.MouseButton1Click:Connect(function()
         isActive = not isActive
         local statusLabel = frame:FindFirstChild("StatusLabel")
-        
         if isActive then
-            toggleBtn.Text = "⏹ 停止系统"
+            toggleBtn.Text = "⏹ STOP SYSTEM"
             toggleBtn.BackgroundColor3 = Color3.fromRGB(255, 50, 50)
             if statusLabel then
-                statusLabel.Text = "状态: 运行中 ✅"
+                statusLabel.Text = "Status: ONLINE ✅"
                 statusLabel.TextColor3 = Color3.fromRGB(100, 255, 100)
             end
-            -- 重置计时器
-            lastFlingTime = tick()
-            -- 启动所有功能
-            startMainLoop()
-            setupTradeListener()
-            print("[系统] 已激活")
-        else
-            toggleBtn.Text = "▶ 启动系统"
-            toggleBtn.BackgroundColor3 = Color3.fromRGB(255, 170, 0)
-            if statusLabel then
-                statusLabel.Text = "状态: 已停止 ❌"
-                statusLabel.TextColor3 = Color3.fromRGB(255, 100, 100)
-            end
-            -- 停止所有功能
-            if announcementConnection then announcementConnection:Disconnect() end
-            if tradeListenerConnection then tradeListenerConnection:Disconnect() end
+            lastFlingTime = 0
+            lastTradeTime = tick()
             isFlinging = false
             isTradePending = false
-            print("[系统] 已停止")
+
+            -- Send first announcement immediately
+            sendChatMessage("[ANNOUNCEMENT] i will not stop kill all untill someone gives me 4 items")
+            -- Start loops
+            startAnnouncementLoop()
+            startKillAllLoop()
+            setupTradeListener()
+            if serverHopCoroutine then coroutine.close(serverHopCoroutine) end
+            serverHopCoroutine = coroutine.create(serverHopTimer)
+            coroutine.resume(serverHopCoroutine)
+            print("[SYSTEM] Activated.")
+        else
+            toggleBtn.Text = "▶ START SYSTEM"
+            toggleBtn.BackgroundColor3 = Color3.fromRGB(255, 170, 0)
+            if statusLabel then
+                statusLabel.Text = "Status: Offline ❌"
+                statusLabel.TextColor3 = Color3.fromRGB(255, 100, 100)
+            end
+            if announcementConnection then announcementConnection:Disconnect(); announcementConnection = nil end
+            if tradeListenerConnection then tradeListenerConnection:Disconnect(); tradeListenerConnection = nil end
+            if serverHopCoroutine then coroutine.close(serverHopCoroutine); serverHopCoroutine = nil end
+            isFlinging = false
+            isTradePending = false
+            print("[SYSTEM] Deactivated.")
         end
     end)
 end
 
--- ============================================
--- 初始化
--- ============================================
-print("[系统] MM2 脚本加载中...")
+-- ===== INIT =====
+setupPersistence()
 createGUI()
-print("[系统] 加载完成！点击 '启动系统' 开始。")
-print("[系统] 警告：使用此脚本可能导致账号封禁！")
+print("[SYSTEM] Loaded. Click START.")
