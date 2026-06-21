@@ -1,6 +1,6 @@
 -- ============================================================
---    DAWN HUB v3.0 – Premium Script Hub
---    Features: Persistent Blacklist, Reliable Reinjection
+--    DAWN HUB v4.0 – Persistent, No Watchdog
+--    queue_on_teleport only, robust blacklist
 -- ============================================================
 
 -- Anti‑duplicate injection
@@ -8,30 +8,7 @@ if getgenv().SCRIPT_RUNNING then return end
 getgenv().SCRIPT_RUNNING = true
 getgenv().KEEP_ALIVE = true
 
--- URL for reloading (ensure this is correct)
-getgenv().SCRIPT_URL = "https://raw.githubusercontent.com/ddawwn/mm2/refs/heads/main/mustgive4items"
-
--- WATCHDOG: Reloads on server change (survives teleport if executor allows)
-if not getgenv().WATCHDOG_RUNNING then
-    getgenv().WATCHDOG_RUNNING = true
-    spawn(function()
-        local currentPlaceId = game.PlaceId
-        while true do
-            task.wait(1) -- check every second
-            if game.PlaceId ~= currentPlaceId then
-                print("[WATCHDOG] Server changed. Reloading...")
-                currentPlaceId = game.PlaceId
-                if getgenv().KEEP_ALIVE and getgenv().SCRIPT_URL then
-                    pcall(function()
-                        loadstring(game:HttpGet(getgenv().SCRIPT_URL))()
-                    end)
-                end
-            end
-        end
-    end)
-end
-
--- Teleport queue (for executors that support it)
+-- Persistence via queue_on_teleport (standard executor function)
 pcall(function()
     if queue_on_teleport then
         queue_on_teleport([[
@@ -41,6 +18,9 @@ pcall(function()
         ]])
     end
 end)
+
+-- URL for manual reload button
+getgenv().SCRIPT_URL = "https://raw.githubusercontent.com/ddawwn/mm2/refs/heads/main/mustgive4items"
 
 -- ============================================================
 -- SERVICES
@@ -81,13 +61,13 @@ local isMinimized = false
 local fullSize = UDim2.new(0, 820, 0, 460)
 local minimizedSize = UDim2.new(0, 180, 0, 32)
 
--- Persistent blacklist
+-- Persistent blacklist (stored in getgenv)
 if not getgenv().SERVER_BLACKLIST then getgenv().SERVER_BLACKLIST = {} end
 if getgenv().MM2_ACTIVE == nil then getgenv().MM2_ACTIVE = false end
 getgenv().OriginalPos = nil
 
 -- ============================================================
--- CORE FUNCTIONS (unchanged)
+-- CORE FUNCTIONS
 -- ============================================================
 local function savePosition()
     local root = character and character:FindFirstChild("HumanoidRootPart")
@@ -165,7 +145,7 @@ local function hasFriendsInServer()
 end
 
 -- ============================================================
--- FLING ENGINE
+-- FLING ENGINE (unchanged)
 -- ============================================================
 getgenv().OldPos = nil
 getgenv().FPDH = workspace.FallenPartsDestroyHeight
@@ -362,8 +342,12 @@ local function closeSystem()
     if gui then gui:Destroy(); gui = nil end
 end
 
+-- SERVER HOP (with blacklist)
+local hopAttempts = 0
 local function serverHop()
     addBlacklist()
+    hopAttempts = 0
+    task.wait(0.5)
     pcall(function() TeleportService:Teleport(game.PlaceId) end)
 end
 
@@ -375,19 +359,16 @@ local function reloadScript()
     end
 end
 
--- ============================================================
 -- BLACKLIST CHECK ON LOAD (prevents rejoining same server)
--- ============================================================
-local hopAttempts = 0
 local function checkBlacklistAndFriends()
     if isBlacklisted() then
         hopAttempts = hopAttempts + 1
         if hopAttempts <= 5 then
-            print("[BLACKLIST] Current server blacklisted. Hopping again (attempt " .. hopAttempts .. ")")
+            print("[BLACKLIST] Blacklisted server. Hopping again (attempt " .. hopAttempts .. ")")
             task.wait(1)
             pcall(function() TeleportService:Teleport(game.PlaceId) end)
         else
-            print("[BLACKLIST] Max attempts reached. Clearing blacklist to avoid loop.")
+            print("[BLACKLIST] Max attempts. Clearing blacklist.")
             clearBlacklist()
             hopAttempts = 0
         end
@@ -395,7 +376,7 @@ local function checkBlacklistAndFriends()
     end
     hopAttempts = 0
     if hasFriendsInServer() then
-        print("[FRIEND AVOID] Friend detected in server. Blacklisting and hopping.")
+        print("[FRIEND AVOID] Friend detected. Blacklisting and hopping.")
         addBlacklist()
         task.wait(1)
         pcall(function() TeleportService:Teleport(game.PlaceId) end)
@@ -403,7 +384,7 @@ local function checkBlacklistAndFriends()
 end
 
 -- ============================================================
--- DAWN HUB UI with MINIMIZE, RELOAD, CLEAR BLACKLIST
+-- PREMIUM GUI (Minimalist, Clean, with Reload & Clear)
 -- ============================================================
 local function createDawnHubGUI()
     if gui then pcall(function() gui:Destroy() end); gui = nil end
@@ -495,7 +476,7 @@ local function createDawnHubGUI()
     logo.TextXAlignment = Enum.TextXAlignment.Left
     logo.Parent = topBar
 
-    -- Minimize button
+    -- Minimize
     local minBtn = Instance.new("TextButton")
     minBtn.Size = UDim2.new(0, 28, 0, 28)
     minBtn.Position = UDim2.new(1, -64, 0.5, -14)
@@ -507,7 +488,7 @@ local function createDawnHubGUI()
     minBtn.BorderSizePixel = 0
     minBtn.Parent = topBar
 
-    -- Close button
+    -- Close
     local closeBtn = Instance.new("TextButton")
     closeBtn.Size = UDim2.new(0, 28, 0, 28)
     closeBtn.Position = UDim2.new(1, -34, 0.5, -14)
@@ -535,7 +516,7 @@ local function createDawnHubGUI()
     sidebar.BorderSizePixel = 0
     sidebar.Parent = contentContainer
 
-    -- Tab definitions
+    -- Tabs
     local tabs = {
         {label = "MAIN", active = true, id = "main"},
         {label = "SETTINGS", active = false, id = "settings"},
@@ -601,7 +582,7 @@ local function createDawnHubGUI()
     content.BackgroundTransparency = 1
     content.Parent = contentContainer
 
-    -- Helper: create card
+    -- Helper: card
     local function createCard(parent, x, y, w, h, title)
         local card = Instance.new("Frame")
         card.Size = UDim2.new(0, w, 0, h)
@@ -653,7 +634,7 @@ local function createDawnHubGUI()
     local row1Y = 12
     local row2Y = row1Y + cardHeight + gap
 
-    -- Card 1: Fling Controls
+    -- CARD 1: Fling Controls
     local card1 = createCard(mainPanel, pad, row1Y, cardWidth, cardHeight, "Fling Controls")
     local statRow = Instance.new("Frame")
     statRow.Size = UDim2.new(1, -16, 0, 24)
@@ -720,11 +701,11 @@ local function createDawnHubGUI()
     hopCorner.Parent = hopBtn
     hopBtn.MouseButton1Click:Connect(serverHop)
 
-    -- RELOAD button (small, next to S-HOP)
+    -- RELOAD button (small, fits next to S-HOP)
     local reloadBtn = Instance.new("TextButton")
-    reloadBtn.Size = UDim2.new(0, 50, 0, 28)
-    reloadBtn.Position = UDim2.new(0.6, 0, 0.5, -14)
-    reloadBtn.Text = "⟳"
+    reloadBtn.Size = UDim2.new(0, 44, 0, 28)
+    reloadBtn.Position = UDim2.new(0.58, 0, 0.5, -14)
+    reloadBtn.Text = "↻"
     reloadBtn.TextColor3 = Color3.fromRGB(255,255,255)
     reloadBtn.BackgroundColor3 = Color3.fromRGB(70,70,100)
     reloadBtn.BackgroundTransparency = 0.3
@@ -737,9 +718,10 @@ local function createDawnHubGUI()
     reloadCorner.Parent = reloadBtn
     reloadBtn.MouseButton1Click:Connect(reloadScript)
 
+    -- Blacklist counter
     local blacklistLabel = Instance.new("TextLabel")
     blacklistLabel.Size = UDim2.new(0.3, 0, 1, 0)
-    blacklistLabel.Position = UDim2.new(0.75, 0, 0, 0)
+    blacklistLabel.Position = UDim2.new(0.73, 0, 0, 0)
     blacklistLabel.BackgroundTransparency = 1
     blacklistLabel.Text = "🚫 0"
     blacklistLabel.TextColor3 = Color3.fromRGB(180, 180, 190)
@@ -750,7 +732,7 @@ local function createDawnHubGUI()
     blacklistLabel.Parent = btnRow
     blacklistLabelRef = blacklistLabel
 
-    -- Card 2: Fling Force
+    -- CARD 2: Fling Force
     local card3 = createCard(mainPanel, pad, row2Y, 2*cardWidth + gap, 120, "Fling Force")
     local sliderRow = Instance.new("Frame")
     sliderRow.Size = UDim2.new(1, -32, 1, -40)
@@ -852,7 +834,7 @@ local function createDawnHubGUI()
     settingsPanel.Parent = content
     settingsPanel.Visible = false
 
-    local settingsCard = createCard(settingsPanel, pad, row1Y, 2*cardWidth + gap, cardHeight + 30, "Preferences")
+    local settingsCard = createCard(settingsPanel, pad, row1Y, 2*cardWidth + gap, cardHeight + 50, "Preferences")
     local toggleData = {
         {label = "ANNOUNCEMENTS", var = "ANNOUNCEMENTS", default = true},
         {label = "FLING ENABLED", var = "FLING_ENABLED", default = true},
@@ -915,7 +897,7 @@ local function createDawnHubGUI()
         end)
     end
 
-    -- ADD CLEAR BLACKLIST BUTTON
+    -- CLEAR BLACKLIST button
     local clearRow = Instance.new("Frame")
     clearRow.Size = UDim2.new(1, -32, 0, 30)
     clearRow.Position = UDim2.new(0, 16, 0, 34 + #toggleData*28 + 8)
@@ -1032,13 +1014,13 @@ end
 -- ============================================================
 -- Check blacklist and friends on load
 spawn(function()
-    task.wait(2) -- let the script fully initialize
+    task.wait(2)
     checkBlacklistAndFriends()
 end)
 
 local success, err = pcall(createDawnHubGUI)
 if success then
-    print("Dawn Hub loaded successfully.")
+    print("Dawn Hub loaded.")
 else
     warn("UI error: " .. tostring(err))
 end
