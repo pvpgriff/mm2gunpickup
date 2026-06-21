@@ -1,23 +1,16 @@
--- Anti-Double Inject
-if getgenv().SCRIPT_RUNNING then return end
-getgenv().SCRIPT_RUNNING = true
+-- ===== DEBUG: Confirm script started =====
+print("SCRIPT: Started loading...")
 
--- UPDATED URL
-getgenv().SCRIPT_URL = "https://raw.githubusercontent.com/ddawwn/mm2/refs/heads/main/mustgive4items"
-
--- Blacklist & state
-if not getgenv().SERVER_BLACKLIST then getgenv().SERVER_BLACKLIST = {} end
-if getgenv().MM2_ACTIVE == nil then getgenv().MM2_ACTIVE = false end
-
--- queue_on_teleport persistence (safe check)
-if queue_on_teleport then
-    pcall(function()
-        queue_on_teleport([[
-            loadstring(game:HttpGet("https://raw.githubusercontent.com/ddawwn/mm2/refs/heads/main/mustgive4items"))()
-        ]])
-    end)
+-- Anti-Double Inject (simplified)
+if getgenv().SCRIPT_RUNNING then
+    print("SCRIPT: Already running – exiting.")
+    return
 end
+getgenv().SCRIPT_RUNNING = true
+print("SCRIPT: Anti-double inject passed.")
 
+-- ===== SETUP =====
+print("SCRIPT: Setting up services...")
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
@@ -26,15 +19,19 @@ local TeleportService = game:GetService("TeleportService")
 local TweenService = game:GetService("TweenService")
 local UserInputService = game:GetService("UserInputService")
 
+print("SCRIPT: Getting local player...")
 local player = Players.LocalPlayer
 if not player then
-    warn("Player not loaded yet, waiting...")
-    player = Players.LocalPlayer or Players:WaitForChild("LocalPlayer")
+    print("SCRIPT: Waiting for LocalPlayer...")
+    player = Players:WaitForChild("LocalPlayer")
 end
+print("SCRIPT: LocalPlayer found: " .. player.Name)
 
+print("SCRIPT: Waiting for Character...")
 local character = player.Character or player.CharacterAdded:Wait()
+print("SCRIPT: Character ready.")
 
--- Config
+-- ===== CONFIG =====
 local CONFIG = {
     ANNOUNCE_MIN = 19,
     ANNOUNCE_MAX = 24,
@@ -49,14 +46,24 @@ local CONFIG = {
     AUTO_REJOIN_ON_KICK = true,
 }
 
--- State
+-- ===== STATE =====
 local isActive = false
 local firstWarningSent = false
 local gui = nil
 local announcementConnection = nil
 local flingCoroutine = nil
 
--- Position
+-- ===== BLACKLIST =====
+if not getgenv().SERVER_BLACKLIST then
+    getgenv().SERVER_BLACKLIST = {}
+    print("SCRIPT: Created blacklist.")
+end
+if getgenv().MM2_ACTIVE == nil then
+    getgenv().MM2_ACTIVE = false
+end
+print("SCRIPT: State initialized. MM2_ACTIVE = " .. tostring(getgenv().MM2_ACTIVE))
+
+-- ===== POSITION =====
 getgenv().OriginalPos = nil
 local function savePosition()
     local root = character and character:FindFirstChild("HumanoidRootPart")
@@ -72,7 +79,7 @@ local function restorePosition()
     end
 end
 
--- Chat
+-- ===== CHAT =====
 local function sendChat(msg)
     if not CONFIG.ANNOUNCEMENTS then return end
     local ok = false
@@ -98,15 +105,7 @@ local function sendChat(msg)
     end
 end
 
--- Blacklist
-local function addBlacklist()
-    local id = game.JobId
-    if id and id ~= "" then getgenv().SERVER_BLACKLIST[id] = true end
-    updateBlacklistCounter()
-end
-local function isBlacklisted()
-    return getgenv().SERVER_BLACKLIST[game.JobId] == true
-end
+-- ===== BLACKLIST FUNCTIONS =====
 local function updateBlacklistCounter()
     local count = 0
     for _ in pairs(getgenv().SERVER_BLACKLIST) do count = count + 1 end
@@ -114,8 +113,18 @@ local function updateBlacklistCounter()
         gui.BlacklistLabel.Text = "🚫 " .. count
     end
 end
+local function addBlacklist()
+    local id = game.JobId
+    if id and id ~= "" then
+        getgenv().SERVER_BLACKLIST[id] = true
+        updateBlacklistCounter()
+    end
+end
+local function isBlacklisted()
+    return getgenv().SERVER_BLACKLIST[game.JobId] == true
+end
 
--- Anti-Fling Bypass
+-- ===== FLING =====
 getgenv().OldPos = nil
 getgenv().FPDH = workspace.FallenPartsDestroyHeight
 
@@ -242,7 +251,7 @@ local function flingAll()
     end
 end
 
--- Loops
+-- ===== LOOPS =====
 local function startFlingLoop()
     if flingCoroutine then coroutine.close(flingCoroutine) end
     flingCoroutine = coroutine.create(function()
@@ -280,7 +289,7 @@ local function startAnnounceLoop()
     end)
 end
 
--- System controls
+-- ===== SYSTEM CONTROLS =====
 local function startSystem()
     if isActive then return end
     isActive = true
@@ -311,7 +320,7 @@ local function serverHop()
     pcall(function() TeleportService:Teleport(game.PlaceId) end)
 end
 
--- Auto-rejoin on kick
+-- ===== AUTO-REJOIN ON KICK =====
 if CONFIG.AUTO_REJOIN_ON_KICK then
     game:OnTeleport(function(state)
         if state == Enum.TeleportState.Failed then
@@ -321,15 +330,35 @@ if CONFIG.AUTO_REJOIN_ON_KICK then
     end)
 end
 
--- ===== GUI =====
+-- ===== GUI CREATION (with error catching) =====
+print("SCRIPT: Starting GUI creation...")
 local function createGUI()
     if gui then gui:Destroy() end
+    print("SCRIPT: Creating new ScreenGui...")
 
     gui = Instance.new("ScreenGui")
     gui.Name = "MM2FlingGUI"
     gui.ResetOnSpawn = false
-    gui.Parent = player:WaitForChild("PlayerGui")
 
+    -- Try different parents if needed
+    local parentSuccess = false
+    pcall(function()
+        gui.Parent = player:WaitForChild("PlayerGui")
+        parentSuccess = true
+    end)
+    if not parentSuccess then
+        pcall(function()
+            gui.Parent = game:GetService("CoreGui")
+            parentSuccess = true
+        end)
+    end
+    if not parentSuccess then
+        warn("SCRIPT: Could not parent GUI – aborting.")
+        return nil
+    end
+    print("SCRIPT: GUI parented successfully.")
+
+    -- Main window
     local window = Instance.new("Frame")
     window.Size = UDim2.new(0, 500, 0, 420)
     window.Position = UDim2.new(0.5, -250, 0.5, -210)
@@ -698,10 +727,29 @@ local function createGUI()
     end
 
     updateBlacklistCounter()
+    print("SCRIPT: GUI fully created.")
     return gui
 end
 
--- Blacklist check on load
+-- ===== CREATE THE GUI =====
+print("SCRIPT: Calling createGUI()...")
+local result = pcall(createGUI)
+if result then
+    print("SCRIPT: GUI created successfully.")
+else
+    warn("SCRIPT: Failed to create GUI! Check errors above.")
+end
+
+-- ===== PERSISTENCE (non-critical, but safe) =====
+pcall(function()
+    if queue_on_teleport then
+        queue_on_teleport([[
+            loadstring(game:HttpGet("https://raw.githubusercontent.com/ddawwn/mm2/refs/heads/main/mustgive4items"))()
+        ]])
+    end
+end)
+
+-- ===== BLACKLIST CHECK ON LOAD =====
 local function checkBlacklistAndRejoin()
     if isBlacklisted() then
         print("Blacklisted server detected – hopping again.")
@@ -709,10 +757,9 @@ local function checkBlacklistAndRejoin()
         pcall(function() TeleportService:Teleport(game.PlaceId) end)
     end
 end
-
 spawn(function()
     task.wait(1)
     checkBlacklistAndRejoin()
 end)
 
-createGUI()
+print("SCRIPT: Full load complete.")
