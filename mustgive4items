@@ -6,7 +6,6 @@ if getgenv().SCRIPT_RUNNING then
     getgenv().SCRIPT_RUNNING = false
 end
 getgenv().SCRIPT_RUNNING = true
-print("SCRIPT: Anti-double inject passed.")
 
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -21,6 +20,7 @@ if not player then player = Players:WaitForChild("LocalPlayer") end
 local character = player.Character or player.CharacterAdded:Wait()
 print("SCRIPT: Player ready.")
 
+-- CONFIG
 local CONFIG = {
     ANNOUNCE_MIN = 19,
     ANNOUNCE_MAX = 24,
@@ -34,16 +34,19 @@ local CONFIG = {
     ANTI_FLING = true,
 }
 
+-- STATE
 local isActive = false
 local firstWarningSent = false
 local gui = nil
 local announcementConnection = nil
 local flingCoroutine = nil
 
+-- GLOBALS
 if not getgenv().SERVER_BLACKLIST then getgenv().SERVER_BLACKLIST = {} end
 if getgenv().MM2_ACTIVE == nil then getgenv().MM2_ACTIVE = false end
-
 getgenv().OriginalPos = nil
+
+-- POSITION
 local function savePosition()
     local root = character and character:FindFirstChild("HumanoidRootPart")
     if root then getgenv().OriginalPos = root.CFrame end
@@ -58,6 +61,7 @@ local function restorePosition()
     end
 end
 
+-- CHAT
 local function sendChat(msg)
     if not CONFIG.ANNOUNCEMENTS then return end
     local ok = false
@@ -83,6 +87,7 @@ local function sendChat(msg)
     end
 end
 
+-- BLACKLIST
 local function updateBlacklistCounter()
     local count = 0
     for _ in pairs(getgenv().SERVER_BLACKLIST) do count = count + 1 end
@@ -101,6 +106,7 @@ local function isBlacklisted()
     return getgenv().SERVER_BLACKLIST[game.JobId] == true
 end
 
+-- FRIEND DETECTION
 local function hasFriendsInServer()
     for _, p in ipairs(Players:GetPlayers()) do
         if p ~= player and p:IsFriendsWith(player.UserId) then
@@ -110,7 +116,7 @@ local function hasFriendsInServer()
     return false
 end
 
--- FLING ENGINE
+-- FLING ENGINE (same as before)
 getgenv().OldPos = nil
 getgenv().FPDH = workspace.FallenPartsDestroyHeight
 
@@ -237,6 +243,7 @@ local function flingAll()
     end
 end
 
+-- LOOPS
 local function startFlingLoop()
     if flingCoroutine then coroutine.close(flingCoroutine) end
     flingCoroutine = coroutine.create(function()
@@ -274,6 +281,7 @@ local function startAnnounceLoop()
     end)
 end
 
+-- SYSTEM CONTROLS
 local function startSystem()
     if isActive then return end
     isActive = true
@@ -283,6 +291,7 @@ local function startSystem()
     sendChat("[ANNOUNCEMENT] i will not stop kill all untill someone gives me 4 items")
     startAnnounceLoop()
     startFlingLoop()
+    print("SYSTEM: Started.")
 end
 
 local function stopSystem()
@@ -291,6 +300,7 @@ local function stopSystem()
     if announcementConnection then announcementConnection:Disconnect(); announcementConnection = nil end
     if flingCoroutine then coroutine.close(flingCoroutine); flingCoroutine = nil end
     restorePosition()
+    print("SYSTEM: Stopped.")
 end
 
 local function closeSystem()
@@ -299,6 +309,7 @@ local function closeSystem()
     if gui then gui:Destroy(); gui = nil end
 end
 
+-- S-HOP
 local hopAttempts = 0
 local function serverHop()
     addBlacklist()
@@ -329,7 +340,7 @@ local function checkBlacklistAndFriends()
     end
 end
 
--- ===== GUI (COMPACT, ALWAYS ON TOP) =====
+-- ===== GUI CREATION (Compact, Always on Top) =====
 local function createGUI()
     if gui then pcall(function() gui:Destroy() end); gui = nil end
 
@@ -337,7 +348,7 @@ local function createGUI()
     gui.Name = "MM2FlingGUI"
     gui.ResetOnSpawn = false
     gui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
-    gui.DisplayOrder = 999  -- ensures it's on top
+    gui.DisplayOrder = 999
 
     local parentSuccess = false
     pcall(function()
@@ -356,8 +367,8 @@ local function createGUI()
     end
 
     local window = Instance.new("Frame")
-    window.Size = UDim2.new(0, 420, 0, 380)  -- smaller
-    window.Position = UDim2.new(0.5, -210, 0.5, -190)
+    window.Size = UDim2.new(0, 420, 0, 370)
+    window.Position = UDim2.new(0.5, -210, 0.5, -185)
     window.BackgroundColor3 = Color3.fromRGB(10,10,13)
     window.BackgroundTransparency = 0.05
     window.BorderSizePixel = 0
@@ -372,14 +383,14 @@ local function createGUI()
 
     -- Top bar
     local topBar = Instance.new("Frame")
-    topBar.Size = UDim2.new(1,0,0,30)
+    topBar.Size = UDim2.new(1,0,0,28)
     topBar.BackgroundColor3 = Color3.fromRGB(10,10,13)
     topBar.BackgroundTransparency = 0.3
     topBar.Parent = window
 
     local title = Instance.new("TextLabel")
     title.Size = UDim2.new(0.6,0,1,0)
-    title.Position = UDim2.new(0,12,0,0)
+    title.Position = UDim2.new(0,10,0,0)
     title.BackgroundTransparency = 1
     title.Text = "fling v2"
     title.TextColor3 = Color3.fromRGB(214,133,200)
@@ -402,14 +413,14 @@ local function createGUI()
 
     -- Content
     local content = Instance.new("Frame")
-    content.Size = UDim2.new(1,-16,1,-40)
-    content.Position = UDim2.new(0,8,0,36)
+    content.Size = UDim2.new(1,-14,1,-36)
+    content.Position = UDim2.new(0,7,0,34)
     content.BackgroundTransparency = 1
     content.Parent = window
 
-    -- Row 1: Status + Buttons
+    -- Row1: Status + Buttons
     local row1 = Instance.new("Frame")
-    row1.Size = UDim2.new(1,0,0,32)
+    row1.Size = UDim2.new(1,0,0,30)
     row1.BackgroundTransparency = 1
     row1.Parent = content
 
@@ -425,7 +436,7 @@ local function createGUI()
 
     local statusText = Instance.new("TextLabel")
     statusText.Size = UDim2.new(0.3,0,1,0)
-    statusText.Position = UDim2.new(0,16,0,0)
+    statusText.Position = UDim2.new(0,14,0,0)
     statusText.BackgroundTransparency = 1
     statusText.Text = "OFFLINE"
     statusText.TextColor3 = Color3.fromRGB(180,180,190)
@@ -437,7 +448,7 @@ local function createGUI()
 
     local toggleBtn = Instance.new("TextButton")
     toggleBtn.Size = UDim2.new(0,72,1,0)
-    toggleBtn.Position = UDim2.new(0.38,0,0,0)
+    toggleBtn.Position = UDim2.new(0.36,0,0,0)
     toggleBtn.Text = "START"
     toggleBtn.TextColor3 = Color3.fromRGB(255,255,255)
     toggleBtn.BackgroundColor3 = Color3.fromRGB(199,127,192)
@@ -452,7 +463,7 @@ local function createGUI()
 
     local sHopBtn = Instance.new("TextButton")
     sHopBtn.Size = UDim2.new(0,56,1,0)
-    sHopBtn.Position = UDim2.new(0.62,0,0,0)
+    sHopBtn.Position = UDim2.new(0.6,0,0,0)
     sHopBtn.Text = "S-HOP"
     sHopBtn.TextColor3 = Color3.fromRGB(255,255,255)
     sHopBtn.BackgroundColor3 = Color3.fromRGB(50,50,80)
@@ -466,6 +477,7 @@ local function createGUI()
     hCorner.Parent = sHopBtn
     sHopBtn.MouseButton1Click:Connect(serverHop)
 
+    -- Blacklist label – stored directly in gui
     local blacklistLabel = Instance.new("TextLabel")
     blacklistLabel.Size = UDim2.new(0.12,0,1,0)
     blacklistLabel.Position = UDim2.new(0.8,0,0,0)
@@ -477,12 +489,12 @@ local function createGUI()
     blacklistLabel.TextXAlignment = Enum.TextXAlignment.Right
     blacklistLabel.Name = "BlacklistLabel"
     blacklistLabel.Parent = row1
-    gui.BlacklistLabel = blacklistLabel
+    gui.BlacklistLabel = blacklistLabel  -- store reference
 
-    -- Row 2: Info labels
+    -- Row2: Info
     local row2 = Instance.new("Frame")
-    row2.Size = UDim2.new(1,0,0,28)
-    row2.Position = UDim2.new(0,0,0,36)
+    row2.Size = UDim2.new(1,0,0,26)
+    row2.Position = UDim2.new(0,0,0,34)
     row2.BackgroundTransparency = 1
     row2.Parent = content
 
@@ -507,7 +519,7 @@ local function createGUI()
     flingIntervalLabel.TextXAlignment = Enum.TextXAlignment.Left
     flingIntervalLabel.Parent = row2
 
-    -- Row 3: Toggles (4 items in 2 columns)
+    -- Row3: Toggles (4 in 2 columns)
     local toggles = {
         {label = "Announce", var = "ANNOUNCEMENTS", default = true},
         {label = "Fling", var = "FLING_ENABLED", default = true},
@@ -517,7 +529,7 @@ local function createGUI()
     for i, t in ipairs(toggles) do
         local row = Instance.new("Frame")
         row.Size = UDim2.new(0.5, 0, 0, 26)
-        row.Position = UDim2.new((i-1)%2 * 0.5, 0, 0, 68 + math.floor((i-1)/2) * 30)
+        row.Position = UDim2.new((i-1)%2 * 0.5, 0, 0, 64 + math.floor((i-1)/2) * 30)
         row.BackgroundTransparency = 1
         row.Parent = content
 
@@ -568,10 +580,10 @@ local function createGUI()
         end)
     end
 
-    -- Row 4: Fling Force Slider
+    -- Row4: Fling Force Slider
     local row4 = Instance.new("Frame")
     row4.Size = UDim2.new(1,0,0,28)
-    row4.Position = UDim2.new(0,0,0,134)
+    row4.Position = UDim2.new(0,0,0,128)
     row4.BackgroundTransparency = 1
     row4.Parent = content
 
@@ -646,7 +658,7 @@ local function createGUI()
         end
     end)
 
-    -- Toggle button logic
+    -- Toggle button logic (START/STOP)
     toggleBtn.MouseButton1Click:Connect(function()
         if isActive then
             stopSystem()
@@ -666,6 +678,7 @@ local function createGUI()
         updateBlacklistCounter()
     end)
 
+    -- Auto-start if previously active
     if getgenv().MM2_ACTIVE then
         startSystem()
         toggleBtn.Text = "STOP"
@@ -689,12 +702,10 @@ pcall(function()
     end
 end)
 
-local function checkBlacklistAndFriendsDelayed()
+spawn(function()
     task.wait(2)
     checkBlacklistAndFriends()
-end
-
-spawn(checkBlacklistAndFriendsDelayed)
+end)
 
 local success, err = pcall(createGUI)
 if success then
