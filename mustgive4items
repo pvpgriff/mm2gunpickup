@@ -1,4 +1,4 @@
-print("SCRIPT: Started loading...")
+print("SCRIPT: Loading Modern GUI...")
 
 if getgenv().SCRIPT_RUNNING then
     print("SCRIPT: Resetting old instance...")
@@ -7,6 +7,7 @@ if getgenv().SCRIPT_RUNNING then
 end
 getgenv().SCRIPT_RUNNING = true
 
+-- Services
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
@@ -18,7 +19,6 @@ local UserInputService = game:GetService("UserInputService")
 local player = Players.LocalPlayer
 if not player then player = Players:WaitForChild("LocalPlayer") end
 local character = player.Character or player.CharacterAdded:Wait()
-print("SCRIPT: Player ready.")
 
 -- CONFIG
 local CONFIG = {
@@ -40,6 +40,10 @@ local firstWarningSent = false
 local gui = nil
 local announcementConnection = nil
 local flingCoroutine = nil
+local blacklistLabelRef = nil
+local windowRef = nil
+local isMinimized = false
+local minimizedSize = UDim2.new(0, 180, 0, 36)
 
 -- GLOBALS
 if not getgenv().SERVER_BLACKLIST then getgenv().SERVER_BLACKLIST = {} end
@@ -91,8 +95,8 @@ end
 local function updateBlacklistCounter()
     local count = 0
     for _ in pairs(getgenv().SERVER_BLACKLIST) do count = count + 1 end
-    if gui and gui:FindFirstChild("BlacklistLabel") then
-        gui.BlacklistLabel.Text = "🚫 " .. count
+    if blacklistLabelRef then
+        blacklistLabelRef.Text = "🚫 " .. count
     end
 end
 local function addBlacklist()
@@ -116,7 +120,7 @@ local function hasFriendsInServer()
     return false
 end
 
--- FLING ENGINE (same as before)
+-- ====== FLING ENGINE (FULLY WORKING) ======
 getgenv().OldPos = nil
 getgenv().FPDH = workspace.FallenPartsDestroyHeight
 
@@ -340,8 +344,8 @@ local function checkBlacklistAndFriends()
     end
 end
 
--- ===== GUI CREATION (Compact, Always on Top) =====
-local function createGUI()
+-- ====== MODERN UI WITH SMOOTH ANIMATIONS ======
+local function createModernGUI()
     if gui then pcall(function() gui:Destroy() end); gui = nil end
 
     gui = Instance.new("ScreenGui")
@@ -366,211 +370,289 @@ local function createGUI()
         return nil
     end
 
+    -- === MAIN WINDOW ===
     local window = Instance.new("Frame")
-    window.Size = UDim2.new(0, 420, 0, 370)
-    window.Position = UDim2.new(0.5, -210, 0.5, -185)
-    window.BackgroundColor3 = Color3.fromRGB(10,10,13)
-    window.BackgroundTransparency = 0.05
+    window.Size = UDim2.new(0, 400, 0, 340)
+    window.Position = UDim2.new(0.5, -200, 0.5, -170)
+    window.BackgroundColor3 = Color3.fromRGB(14, 14, 20)
+    window.BackgroundTransparency = 0.08
     window.BorderSizePixel = 0
     window.ClipsDescendants = true
     window.Active = true
     window.Draggable = true
     window.Parent = gui
+    windowRef = window
 
-    local corner = Instance.new("UICorner")
-    corner.CornerRadius = UDim.new(0, 12)
-    corner.Parent = window
+    -- Shadow effect
+    local shadow = Instance.new("Frame")
+    shadow.Size = UDim2.new(1, 0, 1, 0)
+    shadow.Position = UDim2.new(0, 0, 0, 0)
+    shadow.BackgroundColor3 = Color3.fromRGB(180, 120, 255)
+    shadow.BackgroundTransparency = 0.92
+    shadow.BorderSizePixel = 0
+    shadow.Parent = window
+    local shadowCorner = Instance.new("UICorner")
+    shadowCorner.CornerRadius = UDim.new(0, 14)
+    shadowCorner.Parent = shadow
 
-    -- Top bar
-    local topBar = Instance.new("Frame")
-    topBar.Size = UDim2.new(1,0,0,28)
-    topBar.BackgroundColor3 = Color3.fromRGB(10,10,13)
-    topBar.BackgroundTransparency = 0.3
-    topBar.Parent = window
+    -- Main corner
+    local mainCorner = Instance.new("UICorner")
+    mainCorner.CornerRadius = UDim.new(0, 14)
+    mainCorner.Parent = window
 
+    -- Glossy gradient overlay
+    local gloss = Instance.new("Frame")
+    gloss.Size = UDim2.new(1, 0, 0.5, 0)
+    gloss.Position = UDim2.new(0, 0, 0, 0)
+    gloss.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+    gloss.BackgroundTransparency = 0.97
+    gloss.BorderSizePixel = 0
+    gloss.Parent = window
+    local glossCorner = Instance.new("UICorner")
+    glossCorner.CornerRadius = UDim.new(0, 14)
+    glossCorner.Parent = gloss
+
+    -- === TITLE BAR ===
+    local titleBar = Instance.new("Frame")
+    titleBar.Size = UDim2.new(1, 0, 0, 34)
+    titleBar.BackgroundColor3 = Color3.fromRGB(20, 18, 30)
+    titleBar.BackgroundTransparency = 0.3
+    titleBar.BorderSizePixel = 0
+    titleBar.Parent = window
+    local titleCorner = Instance.new("UICorner")
+    titleCorner.CornerRadius = UDim.new(0, 14)
+    titleCorner.Parent = titleBar
+
+    -- Title
     local title = Instance.new("TextLabel")
-    title.Size = UDim2.new(0.6,0,1,0)
-    title.Position = UDim2.new(0,10,0,0)
+    title.Size = UDim2.new(0.5, 0, 1, 0)
+    title.Position = UDim2.new(0, 14, 0, 0)
     title.BackgroundTransparency = 1
-    title.Text = "fling v2"
-    title.TextColor3 = Color3.fromRGB(214,133,200)
+    title.Text = "✦ FLING"
+    title.TextColor3 = Color3.fromRGB(200, 160, 255)
     title.TextScaled = true
     title.Font = Enum.Font.GothamBold
     title.TextXAlignment = Enum.TextXAlignment.Left
-    title.Parent = topBar
+    title.Parent = titleBar
 
+    -- Minimize button
+    local minBtn = Instance.new("TextButton")
+    minBtn.Size = UDim2.new(0, 26, 0, 26)
+    minBtn.Position = UDim2.new(1, -62, 0.5, -13)
+    minBtn.Text = "─"
+    minBtn.TextColor3 = Color3.fromRGB(180, 180, 190)
+    minBtn.BackgroundTransparency = 1
+    minBtn.TextScaled = true
+    minBtn.Font = Enum.Font.Gotham
+    minBtn.BorderSizePixel = 0
+    minBtn.Parent = titleBar
+    minBtn.MouseButton1Click:Connect(function()
+        isMinimized = not isMinimized
+        local targetSize = isMinimized and minimizedSize or UDim2.new(0, 400, 0, 340)
+        local targetPos = isMinimized and UDim2.new(0.5, -90, 0.5, -170) or UDim2.new(0.5, -200, 0.5, -170)
+        TweenService:Create(window, TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+            Size = targetSize,
+            Position = targetPos
+        }):Play()
+        -- Hide/show content
+        for _, child in ipairs(window:GetChildren()) do
+            if child ~= titleBar and child ~= shadow and child ~= gloss and child ~= mainCorner and child ~= shadowCorner and child ~= glossCorner and child ~= titleCorner then
+                child.Visible = not isMinimized
+            end
+        end
+    end)
+
+    -- Close button
     local closeBtn = Instance.new("TextButton")
-    closeBtn.Size = UDim2.new(0,24,0,24)
-    closeBtn.Position = UDim2.new(1,-28,0.5,-12)
+    closeBtn.Size = UDim2.new(0, 26, 0, 26)
+    closeBtn.Position = UDim2.new(1, -32, 0.5, -13)
     closeBtn.Text = "✕"
-    closeBtn.TextColor3 = Color3.fromRGB(216,216,216)
+    closeBtn.TextColor3 = Color3.fromRGB(180, 180, 190)
     closeBtn.BackgroundTransparency = 1
     closeBtn.TextScaled = true
-    closeBtn.Font = Enum.Font.GothamBold
+    closeBtn.Font = Enum.Font.Gotham
     closeBtn.BorderSizePixel = 0
-    closeBtn.Parent = topBar
+    closeBtn.Parent = titleBar
     closeBtn.MouseButton1Click:Connect(closeSystem)
 
-    -- Content
+    -- === CONTENT ===
     local content = Instance.new("Frame")
-    content.Size = UDim2.new(1,-14,1,-36)
-    content.Position = UDim2.new(0,7,0,34)
+    content.Size = UDim2.new(1, -20, 1, -50)
+    content.Position = UDim2.new(0, 10, 0, 44)
     content.BackgroundTransparency = 1
     content.Parent = window
 
-    -- Row1: Status + Buttons
-    local row1 = Instance.new("Frame")
-    row1.Size = UDim2.new(1,0,0,30)
-    row1.BackgroundTransparency = 1
-    row1.Parent = content
+    -- === STATUS ROW ===
+    local statusRow = Instance.new("Frame")
+    statusRow.Size = UDim2.new(1, 0, 0, 34)
+    statusRow.BackgroundTransparency = 1
+    statusRow.Parent = content
+
+    -- Status dot with glow
+    local dotContainer = Instance.new("Frame")
+    dotContainer.Size = UDim2.new(0, 14, 0, 14)
+    dotContainer.Position = UDim2.new(0, 0, 0.5, -7)
+    dotContainer.BackgroundColor3 = Color3.fromRGB(255, 80, 80)
+    dotContainer.BackgroundTransparency = 0.85
+    dotContainer.BorderSizePixel = 0
+    dotContainer.Parent = statusRow
+    local dotCorner = Instance.new("UICorner")
+    dotCorner.CornerRadius = UDim.new(1, 0)
+    dotCorner.Parent = dotContainer
 
     local dot = Instance.new("Frame")
-    dot.Size = UDim2.new(0,10,0,10)
-    dot.Position = UDim2.new(0,0,0.5,-5)
-    dot.BackgroundColor3 = Color3.fromRGB(255,80,80)
+    dot.Size = UDim2.new(0, 8, 0, 8)
+    dot.Position = UDim2.new(0.5, -4, 0.5, -4)
+    dot.BackgroundColor3 = Color3.fromRGB(255, 80, 80)
     dot.BorderSizePixel = 0
-    dot.Parent = row1
-    local dotCorner = Instance.new("UICorner")
-    dotCorner.CornerRadius = UDim.new(1,0)
-    dotCorner.Parent = dot
+    dot.Parent = dotContainer
+    local dotCorner2 = Instance.new("UICorner")
+    dotCorner2.CornerRadius = UDim.new(1, 0)
+    dotCorner2.Parent = dot
 
     local statusText = Instance.new("TextLabel")
-    statusText.Size = UDim2.new(0.3,0,1,0)
-    statusText.Position = UDim2.new(0,14,0,0)
+    statusText.Size = UDim2.new(0.25, 0, 1, 0)
+    statusText.Position = UDim2.new(0, 20, 0, 0)
     statusText.BackgroundTransparency = 1
     statusText.Text = "OFFLINE"
-    statusText.TextColor3 = Color3.fromRGB(180,180,190)
+    statusText.TextColor3 = Color3.fromRGB(160, 160, 175)
     statusText.TextScaled = true
     statusText.Font = Enum.Font.GothamBold
     statusText.TextXAlignment = Enum.TextXAlignment.Left
     statusText.Name = "StatusText"
-    statusText.Parent = row1
+    statusText.Parent = statusRow
 
+    -- START/STOP Button
     local toggleBtn = Instance.new("TextButton")
-    toggleBtn.Size = UDim2.new(0,72,1,0)
-    toggleBtn.Position = UDim2.new(0.36,0,0,0)
+    toggleBtn.Size = UDim2.new(0, 80, 0, 30)
+    toggleBtn.Position = UDim2.new(0.32, 0, 0.5, -15)
     toggleBtn.Text = "START"
-    toggleBtn.TextColor3 = Color3.fromRGB(255,255,255)
-    toggleBtn.BackgroundColor3 = Color3.fromRGB(199,127,192)
-    toggleBtn.BackgroundTransparency = 0.2
+    toggleBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+    toggleBtn.BackgroundColor3 = Color3.fromRGB(140, 90, 200)
+    toggleBtn.BackgroundTransparency = 0.15
     toggleBtn.TextScaled = true
     toggleBtn.Font = Enum.Font.GothamBold
     toggleBtn.BorderSizePixel = 0
-    toggleBtn.Parent = row1
+    toggleBtn.Parent = statusRow
     local tCorner = Instance.new("UICorner")
-    tCorner.CornerRadius = UDim.new(0,8)
+    tCorner.CornerRadius = UDim.new(0, 8)
     tCorner.Parent = toggleBtn
 
+    -- S-HOP Button
     local sHopBtn = Instance.new("TextButton")
-    sHopBtn.Size = UDim2.new(0,56,1,0)
-    sHopBtn.Position = UDim2.new(0.6,0,0,0)
+    sHopBtn.Size = UDim2.new(0, 60, 0, 30)
+    sHopBtn.Position = UDim2.new(0.55, 0, 0.5, -15)
     sHopBtn.Text = "S-HOP"
-    sHopBtn.TextColor3 = Color3.fromRGB(255,255,255)
-    sHopBtn.BackgroundColor3 = Color3.fromRGB(50,50,80)
+    sHopBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+    sHopBtn.BackgroundColor3 = Color3.fromRGB(50, 50, 80)
     sHopBtn.BackgroundTransparency = 0.3
     sHopBtn.TextScaled = true
     sHopBtn.Font = Enum.Font.GothamBold
     sHopBtn.BorderSizePixel = 0
-    sHopBtn.Parent = row1
+    sHopBtn.Parent = statusRow
     local hCorner = Instance.new("UICorner")
-    hCorner.CornerRadius = UDim.new(0,8)
+    hCorner.CornerRadius = UDim.new(0, 8)
     hCorner.Parent = sHopBtn
     sHopBtn.MouseButton1Click:Connect(serverHop)
 
-    -- Blacklist label – stored directly in gui
+    -- Blacklist counter
     local blacklistLabel = Instance.new("TextLabel")
-    blacklistLabel.Size = UDim2.new(0.12,0,1,0)
-    blacklistLabel.Position = UDim2.new(0.8,0,0,0)
+    blacklistLabel.Size = UDim2.new(0.15, 0, 1, 0)
+    blacklistLabel.Position = UDim2.new(0.8, 0, 0, 0)
     blacklistLabel.BackgroundTransparency = 1
     blacklistLabel.Text = "🚫 0"
-    blacklistLabel.TextColor3 = Color3.fromRGB(180,180,190)
+    blacklistLabel.TextColor3 = Color3.fromRGB(150, 150, 175)
     blacklistLabel.TextScaled = true
     blacklistLabel.Font = Enum.Font.Gotham
     blacklistLabel.TextXAlignment = Enum.TextXAlignment.Right
     blacklistLabel.Name = "BlacklistLabel"
-    blacklistLabel.Parent = row1
-    gui.BlacklistLabel = blacklistLabel  -- store reference
+    blacklistLabel.Parent = statusRow
+    blacklistLabelRef = blacklistLabel
 
-    -- Row2: Info
-    local row2 = Instance.new("Frame")
-    row2.Size = UDim2.new(1,0,0,26)
-    row2.Position = UDim2.new(0,0,0,34)
-    row2.BackgroundTransparency = 1
-    row2.Parent = content
+    -- === INFO ROW ===
+    local infoRow = Instance.new("Frame")
+    infoRow.Size = UDim2.new(1, 0, 0, 26)
+    infoRow.Position = UDim2.new(0, 0, 0, 38)
+    infoRow.BackgroundTransparency = 1
+    infoRow.Parent = content
 
     local announceLabel = Instance.new("TextLabel")
-    announceLabel.Size = UDim2.new(0.48,0,1,0)
+    announceLabel.Size = UDim2.new(0.48, 0, 1, 0)
     announceLabel.BackgroundTransparency = 1
-    announceLabel.Text = "Announce: 19-24s"
-    announceLabel.TextColor3 = Color3.fromRGB(160,160,170)
+    announceLabel.Text = "⏱ Announce: 19-24s"
+    announceLabel.TextColor3 = Color3.fromRGB(140, 140, 160)
     announceLabel.TextScaled = true
     announceLabel.Font = Enum.Font.Gotham
     announceLabel.TextXAlignment = Enum.TextXAlignment.Left
-    announceLabel.Parent = row2
+    announceLabel.Parent = infoRow
 
     local flingIntervalLabel = Instance.new("TextLabel")
-    flingIntervalLabel.Size = UDim2.new(0.48,0,1,0)
-    flingIntervalLabel.Position = UDim2.new(0.5,0,0,0)
+    flingIntervalLabel.Size = UDim2.new(0.48, 0, 1, 0)
+    flingIntervalLabel.Position = UDim2.new(0.5, 0, 0, 0)
     flingIntervalLabel.BackgroundTransparency = 1
-    flingIntervalLabel.Text = "Fling: 2-5s"
-    flingIntervalLabel.TextColor3 = Color3.fromRGB(160,160,170)
+    flingIntervalLabel.Text = "🔄 Fling: 2-5s"
+    flingIntervalLabel.TextColor3 = Color3.fromRGB(140, 140, 160)
     flingIntervalLabel.TextScaled = true
     flingIntervalLabel.Font = Enum.Font.Gotham
     flingIntervalLabel.TextXAlignment = Enum.TextXAlignment.Left
-    flingIntervalLabel.Parent = row2
+    flingIntervalLabel.Parent = infoRow
 
-    -- Row3: Toggles (4 in 2 columns)
-    local toggles = {
+    -- === TOGGLES (2x2 grid) ===
+    local toggleData = {
         {label = "Announce", var = "ANNOUNCEMENTS", default = true},
         {label = "Fling", var = "FLING_ENABLED", default = true},
         {label = "Reset Pos", var = "RESET_POS", default = true},
         {label = "Anti-Fling", var = "ANTI_FLING", default = true},
     }
-    for i, t in ipairs(toggles) do
+
+    for i, data in ipairs(toggleData) do
         local row = Instance.new("Frame")
-        row.Size = UDim2.new(0.5, 0, 0, 26)
-        row.Position = UDim2.new((i-1)%2 * 0.5, 0, 0, 64 + math.floor((i-1)/2) * 30)
+        row.Size = UDim2.new(0.5, -4, 0, 28)
+        row.Position = UDim2.new((i-1)%2 * 0.5 + ((i-1)%2 == 0 and 0 or 0.5), 0, 0, 68 + math.floor((i-1)/2) * 32)
         row.BackgroundTransparency = 1
         row.Parent = content
 
         local lbl = Instance.new("TextLabel")
         lbl.Size = UDim2.new(0.6, 0, 1, 0)
         lbl.BackgroundTransparency = 1
-        lbl.Text = t.label
-        lbl.TextColor3 = Color3.fromRGB(180,180,190)
+        lbl.Text = data.label
+        lbl.TextColor3 = Color3.fromRGB(180, 180, 195)
         lbl.TextScaled = true
         lbl.Font = Enum.Font.Gotham
         lbl.TextXAlignment = Enum.TextXAlignment.Left
         lbl.Parent = row
 
         local toggle = Instance.new("TextButton")
-        toggle.Size = UDim2.new(0,20,0,18)
-        toggle.Position = UDim2.new(0.7,0,0.5,-9)
+        toggle.Size = UDim2.new(0, 22, 0, 20)
+        toggle.Position = UDim2.new(0.7, 0, 0.5, -10)
         toggle.Text = ""
-        toggle.BackgroundColor3 = Color3.fromRGB(30,30,40)
-        toggle.BackgroundTransparency = 0.2
+        toggle.BackgroundColor3 = Color3.fromRGB(35, 35, 50)
+        toggle.BackgroundTransparency = 0.3
         toggle.BorderSizePixel = 0
         toggle.Parent = row
         local tCorner2 = Instance.new("UICorner")
-        tCorner2.CornerRadius = UDim.new(0,5)
+        tCorner2.CornerRadius = UDim.new(0, 6)
         tCorner2.Parent = toggle
 
         local fill = Instance.new("Frame")
-        fill.Size = UDim2.new(1,0,1,0)
-        fill.BackgroundColor3 = Color3.fromRGB(199,127,192)
-        fill.BackgroundTransparency = t.default and 0.1 or 1
+        fill.Size = UDim2.new(1, 0, 1, 0)
+        fill.BackgroundColor3 = Color3.fromRGB(160, 100, 220)
+        fill.BackgroundTransparency = data.default and 0.2 or 1
         fill.BorderSizePixel = 0
         fill.Parent = toggle
         local fCorner = Instance.new("UICorner")
-        fCorner.CornerRadius = UDim.new(0,5)
+        fCorner.CornerRadius = UDim.new(0, 6)
         fCorner.Parent = fill
 
-        local isOn = t.default
+        local isOn = data.default
         toggle.MouseButton1Click:Connect(function()
             isOn = not isOn
-            fill.BackgroundTransparency = isOn and 0.1 or 1
-            CONFIG[t.var] = isOn
-            if t.var == "ANNOUNCEMENTS" then
+            local targetTrans = isOn and 0.2 or 1
+            TweenService:Create(fill, TweenInfo.new(0.2, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+                BackgroundTransparency = targetTrans
+            }):Play()
+            CONFIG[data.var] = isOn
+            if data.var == "ANNOUNCEMENTS" then
                 if isActive then
                     if isOn then startAnnounceLoop() else
                         if announcementConnection then announcementConnection:Disconnect(); announcementConnection = nil end
@@ -580,60 +662,79 @@ local function createGUI()
         end)
     end
 
-    -- Row4: Fling Force Slider
-    local row4 = Instance.new("Frame")
-    row4.Size = UDim2.new(1,0,0,28)
-    row4.Position = UDim2.new(0,0,0,128)
-    row4.BackgroundTransparency = 1
-    row4.Parent = content
+    -- === FLING FORCE SLIDER ===
+    local sliderRow = Instance.new("Frame")
+    sliderRow.Size = UDim2.new(1, 0, 0, 32)
+    sliderRow.Position = UDim2.new(0, 0, 0, 134)
+    sliderRow.BackgroundTransparency = 1
+    sliderRow.Parent = content
 
     local forceLabel = Instance.new("TextLabel")
-    forceLabel.Size = UDim2.new(0.25,0,1,0)
+    forceLabel.Size = UDim2.new(0.22, 0, 1, 0)
     forceLabel.BackgroundTransparency = 1
     forceLabel.Text = "Force"
-    forceLabel.TextColor3 = Color3.fromRGB(180,180,190)
+    forceLabel.TextColor3 = Color3.fromRGB(180, 180, 195)
     forceLabel.TextScaled = true
     forceLabel.Font = Enum.Font.Gotham
     forceLabel.TextXAlignment = Enum.TextXAlignment.Left
-    forceLabel.Parent = row4
+    forceLabel.Parent = sliderRow
 
+    -- Slider track
     local sliderTrack = Instance.new("TextButton")
-    sliderTrack.Size = UDim2.new(0.5,0,0.6,0)
-    sliderTrack.Position = UDim2.new(0.27,0,0.5,-8)
-    sliderTrack.BackgroundColor3 = Color3.fromRGB(28,28,37)
+    sliderTrack.Size = UDim2.new(0.48, 0, 0.6, 0)
+    sliderTrack.Position = UDim2.new(0.24, 0, 0.5, -9)
+    sliderTrack.BackgroundColor3 = Color3.fromRGB(30, 30, 45)
+    sliderTrack.BackgroundTransparency = 0.3
     sliderTrack.BorderSizePixel = 0
-    sliderTrack.Parent = row4
+    sliderTrack.Parent = sliderRow
     local stCorner = Instance.new("UICorner")
-    stCorner.CornerRadius = UDim.new(0,999)
+    stCorner.CornerRadius = UDim.new(0, 999)
     stCorner.Parent = sliderTrack
 
+    -- Slider fill (animated)
     local sliderFill = Instance.new("Frame")
-    sliderFill.Size = UDim2.new(0.5,0,1,0)
-    sliderFill.BackgroundColor3 = Color3.fromRGB(181,111,175)
+    sliderFill.Size = UDim2.new(0.5, 0, 1, 0)
+    sliderFill.BackgroundColor3 = Color3.fromRGB(160, 100, 220)
+    sliderFill.BackgroundTransparency = 0.2
     sliderFill.BorderSizePixel = 0
     sliderFill.Parent = sliderTrack
     local sfCorner = Instance.new("UICorner")
-    sfCorner.CornerRadius = UDim.new(0,999)
+    sfCorner.CornerRadius = UDim.new(0, 999)
     sfCorner.Parent = sliderFill
 
+    -- Slider handle (subtle)
+    local handle = Instance.new("Frame")
+    handle.Size = UDim2.new(0, 12, 0, 12)
+    handle.Position = UDim2.new(0.5, -6, 0.5, -6)
+    handle.BackgroundColor3 = Color3.fromRGB(200, 160, 255)
+    handle.BackgroundTransparency = 0.3
+    handle.BorderSizePixel = 0
+    handle.Parent = sliderTrack
+    local hCorner2 = Instance.new("UICorner")
+    hCorner2.CornerRadius = UDim.new(1, 0)
+    hCorner2.Parent = handle
+
+    -- Force value display
     local forceValue = Instance.new("TextLabel")
-    forceValue.Size = UDim2.new(0.18,0,1,0)
-    forceValue.Position = UDim2.new(0.78,0,0,0)
+    forceValue.Size = UDim2.new(0.2, 0, 1, 0)
+    forceValue.Position = UDim2.new(0.75, 0, 0, 0)
     forceValue.BackgroundTransparency = 1
-    forceValue.Text = "5e7"
-    forceValue.TextColor3 = Color3.fromRGB(180,180,190)
+    forceValue.Text = "5.0e7"
+    forceValue.TextColor3 = Color3.fromRGB(160, 160, 185)
     forceValue.TextScaled = true
     forceValue.Font = Enum.Font.Gotham
     forceValue.TextXAlignment = Enum.TextXAlignment.Left
     forceValue.Name = "ForceValue"
-    forceValue.Parent = row4
+    forceValue.Parent = sliderRow
 
+    -- === SLIDER DRAG LOGIC ===
     local dragging = false
     local function updateSliderFromMouse(x)
         local trackAbsPos = sliderTrack.AbsolutePosition
         local trackSize = sliderTrack.AbsoluteSize
         local relX = math.clamp((x - trackAbsPos.X) / trackSize.X, 0, 1)
         sliderFill.Size = UDim2.new(relX, 0, 1, 0)
+        handle.Position = UDim2.new(relX, -6, 0.5, -6)
         local force = relX * 90000000
         if force < 1000000 then force = 1000000 end
         CONFIG.FLING_FORCE = force
@@ -658,34 +759,37 @@ local function createGUI()
         end
     end)
 
-    -- Toggle button logic (START/STOP)
+    -- === START/STOP LOGIC ===
     toggleBtn.MouseButton1Click:Connect(function()
         if isActive then
             stopSystem()
             toggleBtn.Text = "START"
-            toggleBtn.BackgroundColor3 = Color3.fromRGB(199,127,192)
-            dot.BackgroundColor3 = Color3.fromRGB(255,80,80)
+            toggleBtn.BackgroundColor3 = Color3.fromRGB(140, 90, 200)
+            dot.BackgroundColor3 = Color3.fromRGB(255, 80, 80)
+            dotContainer.BackgroundColor3 = Color3.fromRGB(255, 80, 80)
             statusText.Text = "OFFLINE"
-            statusText.TextColor3 = Color3.fromRGB(180,180,190)
+            statusText.TextColor3 = Color3.fromRGB(160, 160, 175)
         else
             startSystem()
             toggleBtn.Text = "STOP"
-            toggleBtn.BackgroundColor3 = Color3.fromRGB(200,60,60)
-            dot.BackgroundColor3 = Color3.fromRGB(100,255,100)
+            toggleBtn.BackgroundColor3 = Color3.fromRGB(200, 60, 60)
+            dot.BackgroundColor3 = Color3.fromRGB(100, 255, 100)
+            dotContainer.BackgroundColor3 = Color3.fromRGB(100, 255, 100)
             statusText.Text = "ONLINE"
-            statusText.TextColor3 = Color3.fromRGB(100,255,100)
+            statusText.TextColor3 = Color3.fromRGB(100, 255, 100)
         end
         updateBlacklistCounter()
     end)
 
-    -- Auto-start if previously active
+    -- === AUTO-START ===
     if getgenv().MM2_ACTIVE then
         startSystem()
         toggleBtn.Text = "STOP"
-        toggleBtn.BackgroundColor3 = Color3.fromRGB(200,60,60)
-        dot.BackgroundColor3 = Color3.fromRGB(100,255,100)
+        toggleBtn.BackgroundColor3 = Color3.fromRGB(200, 60, 60)
+        dot.BackgroundColor3 = Color3.fromRGB(100, 255, 100)
+        dotContainer.BackgroundColor3 = Color3.fromRGB(100, 255, 100)
         statusText.Text = "ONLINE"
-        statusText.TextColor3 = Color3.fromRGB(100,255,100)
+        statusText.TextColor3 = Color3.fromRGB(100, 255, 100)
         updateBlacklistCounter()
     end
 
@@ -707,9 +811,9 @@ spawn(function()
     checkBlacklistAndFriends()
 end)
 
-local success, err = pcall(createGUI)
+local success, err = pcall(createModernGUI)
 if success then
-    print("SCRIPT: GUI loaded.")
+    print("SCRIPT: Modern GUI loaded.")
 else
     warn("SCRIPT: GUI error: " .. tostring(err))
 end
