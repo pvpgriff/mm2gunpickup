@@ -1,18 +1,17 @@
 --[[
-    MM2 CHAT + CONTINUOUS FLING v10.0
-    ----------------------------------
-    - Announcement every 19‑24s (loops forever).
-    - Fling warning sent only ONCE at activation.
-    - After that, fling loops silently every 2‑5s.
-    - Persistence: auto‑reloads from URL when you join a new server.
-    - No auto‑rejoin, no trade detection.
+    MM2 CHAT + CONTINUUS FLING v12.0
+    ---------------------------------
+    - Start/Stop button (keeps GUI) – only pauses/resumes.
+    - Red X button (destroys GUI and fully uninjects).
+    - Saves your original position on Start and teleports you back on Stop/Close.
+    - Persistence state: auto‑starts if previously active (with auto‑execute).
 ]]
 
--- ===== SET YOUR SCRIPT URL =====
+-- ===== SET YOUR URL =====
 getgenv().SCRIPT_URL = "https://raw.githubusercontent.com/pvpgriff/mm2gunpickup/refs/heads/main/mustgive4items"
--- ===================================
+-- =========================
 
--- ===== PERSISTENCE WATCHDOG (runs only once) =====
+-- ===== PERSISTENCE WATCHDOG =====
 if not getgenv().WATCHDOG_RUNNING then
     getgenv().WATCHDOG_RUNNING = true
     spawn(function()
@@ -27,7 +26,7 @@ if not getgenv().WATCHDOG_RUNNING then
                         loadstring(game:HttpGet(getgenv().SCRIPT_URL))()
                     end)
                 else
-                    warn("[PERSIST] SCRIPT_URL not set – cannot reload.")
+                    warn("[PERSIST] SCRIPT_URL not set.")
                 end
             end
         end
@@ -60,6 +59,41 @@ local firstWarningSent = false
 local gui = nil
 local announcementConnection = nil
 local flingCoroutine = nil
+
+-- ===== GLOBAL STATE (persists across script reloads) =====
+if getgenv().MM2_ACTIVE == nil then
+    getgenv().MM2_ACTIVE = false
+end
+
+-- ===== SAVE ORIGINAL POSITION =====
+-- We store it in getenv so it survives restarts if needed.
+getgenv().OriginalPos = nil
+
+local function saveOriginalPosition()
+    local root = character and character:FindFirstChild("HumanoidRootPart")
+    if root then
+        getgenv().OriginalPos = root.CFrame
+        print("[POS] Saved original position.")
+    else
+        warn("[POS] Could not save position – no HumanoidRootPart.")
+    end
+end
+
+local function restoreOriginalPosition()
+    if not getgenv().OriginalPos then
+        print("[POS] No saved position to restore.")
+        return
+    end
+    local root = character and character:FindFirstChild("HumanoidRootPart")
+    if root then
+        root.CFrame = getgenv().OriginalPos
+        root.Velocity = Vector3.new(0, 0, 0)
+        root.RotVelocity = Vector3.new(0, 0, 0)
+        print("[POS] Restored original position.")
+    else
+        warn("[POS] Cannot restore – no HumanoidRootPart.")
+    end
+end
 
 -- ===== GLOBAL FLING VARIABLES =====
 getgenv().OldPos = nil
@@ -281,15 +315,34 @@ local function startAnnouncementLoop()
     end)
 end
 
--- ===== CLOSE SYSTEM =====
-local function closeSystem()
+-- ===== START SYSTEM =====
+local function startSystem()
+    if isActive then return end
+    isActive = true
+    getgenv().MM2_ACTIVE = true
+    firstWarningSent = false
+    saveOriginalPosition()   -- store starting position
+    sendChatMessage("[ANNOUNCEMENT] i will not stop kill all untill someone gives me 4 items")
+    startAnnouncementLoop()
+    startFlingLoop()
+    print("[SYSTEM] Started.")
+end
+
+-- ===== STOP SYSTEM (pause, keep GUI) =====
+local function stopSystem()
     isActive = false
+    getgenv().MM2_ACTIVE = false
     if announcementConnection then announcementConnection:Disconnect(); announcementConnection = nil end
     if flingCoroutine then coroutine.close(flingCoroutine); flingCoroutine = nil end
+    restoreOriginalPosition()   -- teleport back
+    print("[SYSTEM] Stopped (position restored).")
+end
+
+-- ===== CLOSE SYSTEM (full uninject) =====
+local function closeSystem()
+    stopSystem()   -- this also restores position
     if gui then gui:Destroy(); gui = nil end
-    isFlinging = false
-    firstWarningSent = false
-    print("[SYSTEM] Closed.")
+    print("[SYSTEM] Closed and uninjected.")
 end
 
 -- ===== GUI =====
@@ -311,6 +364,7 @@ local function createGUI()
     frame.Draggable = true
     frame.Parent = gui
 
+    -- RED X – full uninject (closes GUI + stops everything)
     local closeBtn = Instance.new("TextButton")
     closeBtn.Size = UDim2.new(0, 30, 0, 30)
     closeBtn.Position = UDim2.new(1, -35, 0, 5)
@@ -328,7 +382,7 @@ local function createGUI()
     title.Size = UDim2.new(1, 0, 0, 30)
     title.Position = UDim2.new(0, 0, 0, 0)
     title.BackgroundTransparency = 1
-    title.Text = "🔪 MM2 Chat + Fling v10.0"
+    title.Text = "🔪 MM2 Chat + Fling v12.0"
     title.TextColor3 = Color3.fromRGB(255, 170, 0)
     title.TextScaled = true
     title.Font = Enum.Font.GothamBold
@@ -345,6 +399,7 @@ local function createGUI()
     status.Name = "StatusLabel"
     status.Parent = frame
 
+    -- Toggle button (Start/Stop – keeps GUI)
     local toggleBtn = Instance.new("TextButton")
     toggleBtn.Size = UDim2.new(0, 200, 0, 40)
     toggleBtn.Position = UDim2.new(0.5, -100, 0, 65)
@@ -357,34 +412,41 @@ local function createGUI()
     toggleBtn.Parent = frame
 
     toggleBtn.MouseButton1Click:Connect(function()
-        isActive = not isActive
-        local statusLabel = frame:FindFirstChild("StatusLabel")
         if isActive then
-            toggleBtn.Text = "⏹ STOP SYSTEM"
-            toggleBtn.BackgroundColor3 = Color3.fromRGB(255, 50, 50)
-            if statusLabel then
-                statusLabel.Text = "Status: ONLINE ✅"
-                statusLabel.TextColor3 = Color3.fromRGB(100, 255, 100)
-            end
-            firstWarningSent = false
-            print("[SYSTEM] Activated.")
-            sendChatMessage("[ANNOUNCEMENT] i will not stop kill all untill someone gives me 4 items")
-            startAnnouncementLoop()
-            startFlingLoop()
-        else
+            stopSystem()
             toggleBtn.Text = "▶ START SYSTEM"
             toggleBtn.BackgroundColor3 = Color3.fromRGB(255, 170, 0)
-            if statusLabel then
-                statusLabel.Text = "Status: Offline ❌"
-                statusLabel.TextColor3 = Color3.fromRGB(255, 100, 100)
+            if status then
+                status.Text = "Status: Offline ❌"
+                status.TextColor3 = Color3.fromRGB(255, 100, 100)
             end
-            closeSystem()
+        else
+            startSystem()
+            toggleBtn.Text = "⏹ STOP SYSTEM"
+            toggleBtn.BackgroundColor3 = Color3.fromRGB(255, 50, 50)
+            if status then
+                status.Text = "Status: ONLINE ✅"
+                status.TextColor3 = Color3.fromRGB(100, 255, 100)
+            end
         end
     end)
+
+    -- Auto‑start if global flag says we were active
+    if getgenv().MM2_ACTIVE then
+        startSystem()
+        toggleBtn.Text = "⏹ STOP SYSTEM"
+        toggleBtn.BackgroundColor3 = Color3.fromRGB(255, 50, 50)
+        if status then
+            status.Text = "Status: ONLINE ✅"
+            status.TextColor3 = Color3.fromRGB(100, 255, 100)
+        end
+    end
+
+    return gui
 end
 
 -- ===== INIT =====
 createGUI()
-print("[SYSTEM] Loaded. Click START to begin.")
-print("[SYSTEM] Persistence is active – script will reload on server change.")
-print("[SYSTEM] SCRIPT_URL: " .. (getgenv().SCRIPT_URL or "NOT SET"))
+print("[SYSTEM] Loaded. Use the toggle button to Start/Stop (GUI stays).")
+print("[SYSTEM] Red X fully closes and uninjects.")
+print("[SYSTEM] Original position is saved on Start and restored on Stop/Close.")
