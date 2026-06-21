@@ -1,9 +1,9 @@
 -- ============================================================
---    MM2 FLING v5.0 – ATHER.HUB RE-CREATION
---    Premium UI / Near 1:1 Match
+--    MM2 FLING v5.0 – ATHER.HUB MATCH
+--    Premium Desktop UI
 -- ============================================================
 
--- Anti‑duplicate injection
+-- Anti-duplicate injection
 if getgenv().SCRIPT_RUNNING then return end
 getgenv().SCRIPT_RUNNING = true
 getgenv().KEEP_ALIVE = true
@@ -22,7 +22,7 @@ if not getgenv().TELEPORT_QUEUED then
 end
 
 -- ============================================================
--- SERVICES & SETUP
+-- SERVICES
 -- ============================================================
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -62,7 +62,7 @@ if getgenv().MM2_ACTIVE == nil then getgenv().MM2_ACTIVE = false end
 getgenv().OriginalPos = nil
 
 -- ============================================================
--- CORE FUNCTIONS (same as before, kept intact)
+-- CORE FUNCTIONS (unchanged)
 -- ============================================================
 local function savePosition()
     local root = character and character:FindFirstChild("HumanoidRootPart")
@@ -134,7 +134,7 @@ local function hasFriendsInServer()
 end
 
 -- ============================================================
--- FLING ENGINE (unchanged)
+-- FLING ENGINE
 -- ============================================================
 getgenv().OldPos = nil
 getgenv().FPDH = workspace.FallenPartsDestroyHeight
@@ -350,7 +350,7 @@ local function checkBlacklistAndFriends()
 end
 
 -- ============================================================
--- PREMIUM ATHER.HUB GUI (Near 1:1)
+-- PREMIUM ATHER.HUB UI (Near 1:1)
 -- ============================================================
 local function createAtherGUI()
     if gui then pcall(function() gui:Destroy() end); gui = nil end
@@ -374,19 +374,19 @@ local function createAtherGUI()
     end
     if not parentSuccess then return nil end
 
-    -- MAIN WINDOW (860x550)
+    -- MAIN WINDOW (matches reference proportions)
     local window = Instance.new("Frame")
-    window.Size = UDim2.new(0, 860, 0, 550)
-    window.Position = UDim2.new(0.5, -430, 0.5, -275)
-    window.BackgroundColor3 = Color3.fromRGB(10, 10, 13)
-    window.BackgroundTransparency = 0.05
+    window.Size = UDim2.new(0, 860, 0, 520)   -- Slightly taller to fit cards
+    window.Position = UDim2.new(0.5, -430, 0.5, -260)
+    window.BackgroundColor3 = Color3.fromRGB(10, 10, 13) -- #0A0A0D
+    window.BackgroundTransparency = 0.05     -- Very slight transparency for faint scene
     window.BorderSizePixel = 0
     window.ClipsDescendants = true
     window.Active = true
     window.Draggable = true
     window.Parent = gui
 
-    -- Window shadow
+    -- Shadow (subtle glow)
     local shadow = Instance.new("Frame")
     shadow.Size = UDim2.new(1, 0, 1, 0)
     shadow.BackgroundColor3 = Color3.fromRGB(200, 160, 255)
@@ -403,15 +403,14 @@ local function createAtherGUI()
 
     -- ===== TOP BAR =====
     local topBar = Instance.new("Frame")
-    topBar.Size = UDim2.new(1, 0, 0, 44)
+    topBar.Size = UDim2.new(1, 0, 0, 32)    -- 32px height
     topBar.BackgroundColor3 = Color3.fromRGB(10, 10, 13)
     topBar.BackgroundTransparency = 0.1
     topBar.BorderSizePixel = 0
     topBar.Parent = window
 
-    -- Logo (no emojis)
     local logo = Instance.new("TextLabel")
-    logo.Size = UDim2.new(0.15, 0, 1, 0)
+    logo.Size = UDim2.new(0.2, 0, 1, 0)
     logo.Position = UDim2.new(0, 16, 0, 0)
     logo.BackgroundTransparency = 1
     logo.Text = "fling.hub"
@@ -441,14 +440,14 @@ local function createAtherGUI()
 
     -- ===== SIDEBAR =====
     local sidebar = Instance.new("Frame")
-    sidebar.Size = UDim2.new(0, 200, 1, -44)
-    sidebar.Position = UDim2.new(0, 0, 0, 44)
-    sidebar.BackgroundColor3 = Color3.fromRGB(14, 14, 19)
+    sidebar.Size = UDim2.new(0, 200, 1, -32)
+    sidebar.Position = UDim2.new(0, 0, 0, 32)
+    sidebar.BackgroundColor3 = Color3.fromRGB(14, 14, 19) -- #0E0E13
     sidebar.BackgroundTransparency = 0.2
     sidebar.BorderSizePixel = 0
     sidebar.Parent = window
 
-    -- Sidebar items (only "Main" active)
+    -- Sidebar items (matching reference: Main, Visuals, Webhook, Settings)
     local sidebarItems = {
         {icon = "🏠", label = "Main", active = true},
         {icon = "👁", label = "Visuals", active = false},
@@ -470,7 +469,7 @@ local function createAtherGUI()
         btnCorner.Parent = btnFrame
 
         if item.active then
-            -- Active glow border
+            -- Active glow border (subtle purple outline)
             local glow = Instance.new("Frame")
             glow.Size = UDim2.new(1, 0, 1, 0)
             glow.BackgroundColor3 = Color3.fromRGB(200, 112, 190)
@@ -505,56 +504,59 @@ local function createAtherGUI()
 
     -- ===== CONTENT AREA =====
     local content = Instance.new("Frame")
-    content.Size = UDim2.new(1, -200, 1, -44)
-    content.Position = UDim2.new(0, 200, 0, 44)
+    content.Size = UDim2.new(1, -200, 1, -32)
+    content.Position = UDim2.new(0, 200, 0, 32)
     content.BackgroundTransparency = 1
     content.Parent = window
 
-    -- ===== CARDS (3 columns) =====
-    local pad = 12
-    local cardWidth = 200  -- adjust as needed
-    local cardHeight = 190
-    local gap = 12
-    local cardY = 12
+    -- Padding and grid
+    local pad = 20
+    local gap = 18
+    local cardWidth = 190  -- adjust to fit three cards
+    local cardHeight = 200
+    local cardY = 16
 
-    -- Helper to create a card
-    local function createCard(title, xPos)
-        local card = Instance.new("Frame")
-        card.Size = UDim2.new(0, cardWidth, 0, cardHeight)
-        card.Position = UDim2.new(0, xPos, 0, cardY)
-        card.BackgroundColor3 = Color3.fromRGB(18, 18, 24)
-        card.BackgroundTransparency = 0.25
-        card.BorderSizePixel = 0
-        card.Parent = content
-        local cardCorner = Instance.new("UICorner")
-        cardCorner.CornerRadius = UDim.new(0, 14)
-        cardCorner.Parent = card
+    -- ===== CARD 1: Fling Controls =====
+    local card1 = Instance.new("Frame")
+    card1.Size = UDim2.new(0, cardWidth, 0, cardHeight)
+    card1.Position = UDim2.new(0, pad, 0, cardY)
+    card1.BackgroundColor3 = Color3.fromRGB(18, 18, 24)
+    card1.BackgroundTransparency = 0.20  -- 80% opacity
+    card1.BorderSizePixel = 0
+    card1.Parent = content
+    local cardCorner1 = Instance.new("UICorner")
+    cardCorner1.CornerRadius = UDim.new(0, 14)
+    cardCorner1.Parent = card1
+    -- Shadow
+    local cardShadow1 = Instance.new("Frame")
+    cardShadow1.Size = UDim2.new(1, 0, 1, 0)
+    cardShadow1.BackgroundColor3 = Color3.fromRGB(0,0,0)
+    cardShadow1.BackgroundTransparency = 0.85
+    cardShadow1.BorderSizePixel = 0
+    cardShadow1.Parent = card1
+    local cardShadowCorner1 = Instance.new("UICorner")
+    cardShadowCorner1.CornerRadius = UDim.new(0, 14)
+    cardShadowCorner1.Parent = cardShadow1
 
-        local titleLabel = Instance.new("TextLabel")
-        titleLabel.Size = UDim2.new(1, -16, 0, 28)
-        titleLabel.Position = UDim2.new(0, 8, 0, 8)
-        titleLabel.BackgroundTransparency = 1
-        titleLabel.Text = title
-        titleLabel.TextColor3 = Color3.fromRGB(110, 110, 121)
-        titleLabel.TextScaled = true
-        titleLabel.Font = Enum.Font.Gotham
-        titleLabel.TextXAlignment = Enum.TextXAlignment.Left
-        titleLabel.Parent = card
+    -- Card Title
+    local title1 = Instance.new("TextLabel")
+    title1.Size = UDim2.new(1, -16, 0, 24)
+    title1.Position = UDim2.new(0, 8, 0, 12)
+    title1.BackgroundTransparency = 1
+    title1.Text = "Fling Controls"
+    title1.TextColor3 = Color3.fromRGB(110, 110, 121)
+    title1.TextScaled = true
+    title1.Font = Enum.Font.Gotham
+    title1.TextXAlignment = Enum.TextXAlignment.Left
+    title1.Parent = card1
 
-        return card, titleLabel
-    end
-
-    -- Card 1: Fling Controls
-    local card1, title1 = createCard("Fling Controls", pad)
-
-    -- Status + Toggle
+    -- Status row
     local statRow = Instance.new("Frame")
-    statRow.Size = UDim2.new(1, -16, 0, 32)
+    statRow.Size = UDim2.new(1, -16, 0, 30)
     statRow.Position = UDim2.new(0, 8, 0, 40)
     statRow.BackgroundTransparency = 1
     statRow.Parent = card1
 
-    -- Status dot
     local dot = Instance.new("Frame")
     dot.Size = UDim2.new(0, 8, 0, 8)
     dot.Position = UDim2.new(0, 0, 0.5, -4)
@@ -577,10 +579,10 @@ local function createAtherGUI()
     statLabel.Name = "StatusLabel"
     statLabel.Parent = statRow
 
-    -- Toggle (Start/Stop)
+    -- START button
     local toggleBtn = Instance.new("TextButton")
-    toggleBtn.Size = UDim2.new(0, 80, 0, 28)
-    toggleBtn.Position = UDim2.new(0.55, 0, 0.5, -14)
+    toggleBtn.Size = UDim2.new(0, 80, 0, 30)
+    toggleBtn.Position = UDim2.new(0.55, 0, 0.5, -15)
     toggleBtn.Text = "START"
     toggleBtn.TextColor3 = Color3.fromRGB(255,255,255)
     toggleBtn.BackgroundColor3 = Color3.fromRGB(199,127,192)
@@ -593,16 +595,16 @@ local function createAtherGUI()
     tCorner.CornerRadius = UDim.new(0, 8)
     tCorner.Parent = toggleBtn
 
-    -- S-HOP + Blacklist
+    -- S-HOP + Blacklist row
     local hopRow = Instance.new("Frame")
-    hopRow.Size = UDim2.new(1, -16, 0, 32)
+    hopRow.Size = UDim2.new(1, -16, 0, 30)
     hopRow.Position = UDim2.new(0, 8, 0, 76)
     hopRow.BackgroundTransparency = 1
     hopRow.Parent = card1
 
     local hopBtn = Instance.new("TextButton")
-    hopBtn.Size = UDim2.new(0, 70, 0, 28)
-    hopBtn.Position = UDim2.new(0, 0, 0.5, -14)
+    hopBtn.Size = UDim2.new(0, 70, 0, 30)
+    hopBtn.Position = UDim2.new(0, 0, 0.5, -15)
     hopBtn.Text = "S-HOP"
     hopBtn.TextColor3 = Color3.fromRGB(255,255,255)
     hopBtn.BackgroundColor3 = Color3.fromRGB(50,50,80)
@@ -629,8 +631,38 @@ local function createAtherGUI()
     blacklistLabel.Parent = hopRow
     blacklistLabelRef = blacklistLabel
 
-    -- Card 2: Settings (toggles)
-    local card2, title2 = createCard("Settings", pad + cardWidth + gap)
+    -- ===== CARD 2: Settings =====
+    local card2 = Instance.new("Frame")
+    card2.Size = UDim2.new(0, cardWidth, 0, cardHeight)
+    card2.Position = UDim2.new(0, pad + cardWidth + gap, 0, cardY)
+    card2.BackgroundColor3 = Color3.fromRGB(18, 18, 24)
+    card2.BackgroundTransparency = 0.20
+    card2.BorderSizePixel = 0
+    card2.Parent = content
+    local cardCorner2 = Instance.new("UICorner")
+    cardCorner2.CornerRadius = UDim.new(0, 14)
+    cardCorner2.Parent = card2
+    -- Shadow
+    local cardShadow2 = Instance.new("Frame")
+    cardShadow2.Size = UDim2.new(1, 0, 1, 0)
+    cardShadow2.BackgroundColor3 = Color3.fromRGB(0,0,0)
+    cardShadow2.BackgroundTransparency = 0.85
+    cardShadow2.BorderSizePixel = 0
+    cardShadow2.Parent = card2
+    local cardShadowCorner2 = Instance.new("UICorner")
+    cardShadowCorner2.CornerRadius = UDim.new(0, 14)
+    cardShadowCorner2.Parent = cardShadow2
+
+    local title2 = Instance.new("TextLabel")
+    title2.Size = UDim2.new(1, -16, 0, 24)
+    title2.Position = UDim2.new(0, 8, 0, 12)
+    title2.BackgroundTransparency = 1
+    title2.Text = "Settings"
+    title2.TextColor3 = Color3.fromRGB(110, 110, 121)
+    title2.TextScaled = true
+    title2.Font = Enum.Font.Gotham
+    title2.TextXAlignment = Enum.TextXAlignment.Left
+    title2.Parent = card2
 
     local toggleData = {
         {label = "Announce", var = "ANNOUNCEMENTS", default = true},
@@ -641,7 +673,7 @@ local function createAtherGUI()
 
     for i, data in ipairs(toggleData) do
         local row = Instance.new("Frame")
-        row.Size = UDim2.new(1, -16, 0, 26)
+        row.Size = UDim2.new(1, -16, 0, 24)
         row.Position = UDim2.new(0, 8, 0, 40 + (i-1)*28)
         row.BackgroundTransparency = 1
         row.Parent = card2
@@ -693,18 +725,46 @@ local function createAtherGUI()
         end)
     end
 
-    -- Card 3: Fling Force (slider)
-    local card3, title3 = createCard("Fling Force", pad + 2*(cardWidth + gap))
+    -- ===== CARD 3: Fling Force =====
+    local card3 = Instance.new("Frame")
+    card3.Size = UDim2.new(0, cardWidth, 0, cardHeight)
+    card3.Position = UDim2.new(0, pad + 2*(cardWidth + gap), 0, cardY)
+    card3.BackgroundColor3 = Color3.fromRGB(18, 18, 24)
+    card3.BackgroundTransparency = 0.20
+    card3.BorderSizePixel = 0
+    card3.Parent = content
+    local cardCorner3 = Instance.new("UICorner")
+    cardCorner3.CornerRadius = UDim.new(0, 14)
+    cardCorner3.Parent = card3
+    local cardShadow3 = Instance.new("Frame")
+    cardShadow3.Size = UDim2.new(1, 0, 1, 0)
+    cardShadow3.BackgroundColor3 = Color3.fromRGB(0,0,0)
+    cardShadow3.BackgroundTransparency = 0.85
+    cardShadow3.BorderSizePixel = 0
+    cardShadow3.Parent = card3
+    local cardShadowCorner3 = Instance.new("UICorner")
+    cardShadowCorner3.CornerRadius = UDim.new(0, 14)
+    cardShadowCorner3.Parent = cardShadow3
 
-    -- Slider
+    local title3 = Instance.new("TextLabel")
+    title3.Size = UDim2.new(1, -16, 0, 24)
+    title3.Position = UDim2.new(0, 8, 0, 12)
+    title3.BackgroundTransparency = 1
+    title3.Text = "Fling Force"
+    title3.TextColor3 = Color3.fromRGB(110, 110, 121)
+    title3.TextScaled = true
+    title3.Font = Enum.Font.Gotham
+    title3.TextXAlignment = Enum.TextXAlignment.Left
+    title3.Parent = card3
+
     local sliderRow = Instance.new("Frame")
-    sliderRow.Size = UDim2.new(1, -16, 0, 50)
+    sliderRow.Size = UDim2.new(1, -16, 0, 60)
     sliderRow.Position = UDim2.new(0, 8, 0, 40)
     sliderRow.BackgroundTransparency = 1
     sliderRow.Parent = card3
 
     local forceLabel = Instance.new("TextLabel")
-    forceLabel.Size = UDim2.new(0.35, 0, 0.4, 0)
+    forceLabel.Size = UDim2.new(0.4, 0, 0.3, 0)
     forceLabel.Position = UDim2.new(0, 0, 0, 0)
     forceLabel.BackgroundTransparency = 1
     forceLabel.Text = "Force"
@@ -715,8 +775,8 @@ local function createAtherGUI()
     forceLabel.Parent = sliderRow
 
     local forceValue = Instance.new("TextLabel")
-    forceValue.Size = UDim2.new(0.4, 0, 0.4, 0)
-    forceValue.Position = UDim2.new(0.5, 0, 0, 0)
+    forceValue.Size = UDim2.new(0.5, 0, 0.3, 0)
+    forceValue.Position = UDim2.new(0.45, 0, 0, 0)
     forceValue.BackgroundTransparency = 1
     forceValue.Text = "5.0e7"
     forceValue.TextColor3 = Color3.fromRGB(180,180,190)
@@ -727,7 +787,7 @@ local function createAtherGUI()
     forceValue.Parent = sliderRow
 
     local sliderTrack = Instance.new("Frame")
-    sliderTrack.Size = UDim2.new(1, 0, 0.35, 0)
+    sliderTrack.Size = UDim2.new(1, 0, 0.3, 0)
     sliderTrack.Position = UDim2.new(0, 0, 0.6, 0)
     sliderTrack.BackgroundColor3 = Color3.fromRGB(28,28,37)
     sliderTrack.BackgroundTransparency = 0.3
@@ -810,7 +870,7 @@ local function createAtherGUI()
         updateBlacklistCounter()
     end)
 
-    -- Auto‑start if was active
+    -- Auto-start if was active
     if getgenv().MM2_ACTIVE then
         isActive = true
         firstWarningSent = false
@@ -839,7 +899,7 @@ end)
 
 local success, err = pcall(createAtherGUI)
 if success then
-    print("ATHER.HUB UI re‑created.")
+    print("ATHER.HUB GUI loaded.")
 else
     warn("UI error: " .. tostring(err))
 end
