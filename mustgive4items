@@ -1,10 +1,9 @@
--- DAWN HUB v10 – Persistent Settings + Auto Trade ON by default
+-- DAWN HUB v10.1 – Fixed queue_on_teleport error
 
 if getgenv().SCRIPT_RUNNING then return end
 getgenv().SCRIPT_RUNNING = true
 
 -- ===== PERSISTENT STATE =====
--- Store config and active state in getgenv()
 if not getgenv().DAWN_CONFIG then
     getgenv().DAWN_CONFIG = {
         ANNOUNCE_MIN = 19,
@@ -17,28 +16,20 @@ if not getgenv().DAWN_CONFIG then
         FLING_ENABLED = true,
         RESET_POS = true,
         ANTI_FLING = true,
-        AUTO_TRADE = true,  -- ON by default
+        AUTO_TRADE = true,
     }
 end
 if getgenv().DAWN_ACTIVE == nil then getgenv().DAWN_ACTIVE = false end
-
--- ===== PERSISTENCE ON TELEPORT =====
 getgenv().KEEP_ALIVE = true
+
+-- ===== PERSISTENCE ON TELEPORT (simplified & safe) =====
 pcall(function()
     if queue_on_teleport then
         queue_on_teleport([[
-            if getgenv().KEEP_ALIVE then
-                local url = "https://raw.githubusercontent.com/ddawwn/mm2/refs/heads/main/mustgive4items"
-                local success, result = pcall(function()
-                    return game:HttpGet(url)
-                end)
-                if success and result then
-                    local success, err = pcall(loadstring, result)
-                    if not success then
-                        warn("Script load error:", err)
-                    end
-                end
-            end
+            local s, e = pcall(function()
+                loadstring(game:HttpGet("https://raw.githubusercontent.com/ddawwn/mm2/refs/heads/main/mustgive4items"))()
+            end)
+            if not s then warn("Teleport reload error:", e) end
         ]])
     end
 end)
@@ -319,7 +310,7 @@ local function stopTradeListener()
     isProcessingTrade = false
 end
 
--- ===== STATE VARIABLES (synced with persistent config) =====
+-- ===== STATE VARIABLES =====
 local CONFIG = getgenv().DAWN_CONFIG
 local isActive = getgenv().DAWN_ACTIVE
 local firstWarningSent = false
@@ -823,7 +814,7 @@ local function createDawnHubGUI()
         end
     end)
 
-    -- Settings toggles (including Auto-Trade)
+    -- Settings toggles
     local settingsHeader = Instance.new("TextLabel")
     settingsHeader.Size = UDim2.new(1, -pad*2, 0, 24)
     settingsHeader.Position = UDim2.new(0, pad, 0, pad + 230)
