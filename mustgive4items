@@ -1,28 +1,63 @@
+-- DAWN HUB v12 – Full Persistence (File‑based)
+
 if _G.SCRIPT_RUNNING then return end
 _G.SCRIPT_RUNNING = true
 
--- ===== PERSISTENT STATE =====
-if not _G.DAWN_CONFIG then
-    _G.DAWN_CONFIG = {
-        ANNOUNCE_MIN = 19,
-        ANNOUNCE_MAX = 24,
-        FLING_INTERVAL_MIN = 2,
-        FLING_INTERVAL_MAX = 5,
-        COUNTDOWN = 5,
-        FLING_FORCE = 50000000,
-        ANNOUNCEMENTS = true,
-        FLING_ENABLED = true,
-        RESET_POS = true,
-        ANTI_FLING = true,
-        AUTO_TRADE = true,
-        ChamsESP = true,
-        RoleESP = true,
-        GunESP = true,
-        Xray = false,
-        RoleNotifications = true,
-    }
+-- ===== FILE‑BASED PERSISTENCE =====
+local SETTINGS_FILE = "dawn_hub_data.json"
+
+local function loadData()
+    if not isfile or not readfile then return {} end
+    local ok, data = pcall(function()
+        return game:GetService("HttpService"):JSONDecode(readfile(SETTINGS_FILE))
+    end)
+    if ok and type(data) == "table" then return data end
+    return {}
 end
-if _G.DAWN_ACTIVE == nil then _G.DAWN_ACTIVE = false end
+
+local function saveData(data)
+    if not writefile then return end
+    pcall(function()
+        writefile(SETTINGS_FILE, game:GetService("HttpService"):JSONEncode(data))
+    end)
+end
+
+-- Load saved data
+local saved = loadData()
+
+-- Merge with defaults
+local CONFIG = {
+    ANNOUNCE_MIN = 19,
+    ANNOUNCE_MAX = 24,
+    FLING_INTERVAL_MIN = 2,
+    FLING_INTERVAL_MAX = 5,
+    COUNTDOWN = 5,
+    FLING_FORCE = 50000000,
+    ANNOUNCEMENTS = true,
+    FLING_ENABLED = true,
+    RESET_POS = true,
+    ANTI_FLING = true,
+    AUTO_TRADE = true,
+    ChamsESP = true,
+    RoleESP = true,
+    GunESP = true,
+    Xray = false,
+    RoleNotifications = true,
+    BLACKLIST = {},  -- persistent blacklist (server JobIds)
+    ACTIVE = false,
+}
+
+for k, v in pairs(saved) do
+    CONFIG[k] = v
+end
+
+local function saveSettings()
+    saveData(CONFIG)
+end
+
+-- ===== GLOBALS =====
+_G.DAWN_CONFIG = CONFIG
+_G.DAWN_ACTIVE = CONFIG.ACTIVE
 _G.KEEP_ALIVE = true
 _G.SCRIPT_URL = "https://raw.githubusercontent.com/ddawwn/mm2/refs/heads/main/mustgive4items"
 
@@ -40,46 +75,53 @@ local player = Players.LocalPlayer
 if not player then player = Players:WaitForChild("LocalPlayer") end
 local character = player.Character or player.CharacterAdded:Wait()
 
--- ===== BLACKLIST (TeleportData) =====
+-- ===== BLACKLIST (File‑based + TeleportData) =====
 local function getVisitedServers()
-    local data = TeleportService:GetLocalPlayerTeleportData()
-    if data and data.visitedServers then return data.visitedServers end
-    return {}
+    return CONFIG.BLACKLIST or {}
 end
 
 local function addVisitedServer()
-    local visited = getVisitedServers()
     local jobId = game.JobId
     if jobId and jobId ~= "" then
+        local blacklist = getVisitedServers()
         local found = false
-        for _, id in ipairs(visited) do if id == jobId then found = true; break end end
-        if not found then table.insert(visited, jobId) end
+        for _, id in ipairs(blacklist) do if id == jobId then found = true; break end end
+        if not found then
+            table.insert(blacklist, jobId)
+            CONFIG.BLACKLIST = blacklist
+            saveSettings()
+        end
     end
-    return visited
 end
 
 local function isVisited()
-    local visited = getVisitedServers()
-    for _, id in ipairs(visited) do if id == game.JobId then return true end end
+    local jobId = game.JobId
+    if not jobId then return false end
+    for _, id in ipairs(getVisitedServers()) do
+        if id == jobId then return true end
+    end
     return false
 end
 
 local function clearVisited()
+    CONFIG.BLACKLIST = {}
+    saveSettings()
+    -- Also hop to a new server to leave blacklisted ones
     local options = Instance.new("TeleportOptions")
     options:SetTeleportData({ visitedServers = {} })
     pcall(function() TeleportService:Teleport(game.PlaceId, player, options) end)
 end
 
 local function serverHop()
-    local visited = addVisitedServer()
+    addVisitedServer()
     local options = Instance.new("TeleportOptions")
-    options:SetTeleportData({ visitedServers = visited })
+    options:SetTeleportData({ visitedServers = getVisitedServers() })
     pcall(function() TeleportService:Teleport(game.PlaceId, player, options) end)
 end
 
 -- ===== FLING ENGINE =====
 local function flingAll(force)
-    force = force or _G.DAWN_CONFIG.FLING_FORCE
+    force = force or CONFIG.FLING_FORCE
     for _, target in ipairs(Players:GetPlayers()) do
         if target ~= player then
             pcall(function()
@@ -174,24 +216,64 @@ local function countWeaponSkins(offerTable)
     return count
 end
 
+-- ===== FIXED clickGuiButton (WORKS) =====
 local function clickGuiButton(buttonNamePattern)
     local playerGui = player:FindFirstChild("PlayerGui")
     if not playerGui then return false end
+
     local function search(guiObj)
         for _, child in ipairs(guiObj:GetChildren()) do
             if child:IsA("TextButton") or child:IsA("ImageButton") then
                 local text = string.lower(child.Text or child.Name or "")
                 if string.find(text, string.lower(buttonNamePattern)) then
+                    local clicked = false
+                    
                     pcall(function()
-                        child:Fire("MouseButton1Click")
+                        local connections = getconnections(child.MouseButton1Click)
+                        if connections then
+                            for _, conn in ipairs(connections) do
+                                conn:Fire()
+                                clicked = true
+                            end
+                        end
                     end)
-                    return true
+                    if clicked then return true end
+                    
+                    pcall(function()
+                        local pos = child.AbsolutePosition + child.AbsoluteSize / 2
+                        game:GetService("UserInputService"):InputBegan({
+                            UserInputType = Enum.UserInputType.MouseButton1,
+                            Position = pos,
+                        }, false)
+                        task.wait(0.05)
+                        game:GetService("UserInputService"):InputEnded({
+                            UserInputType = Enum.UserInputType.MouseButton1,
+                            Position = pos,
+                        }, false)
+                        clicked = true
+                    end)
+                    if clicked then return true end
+                    
+                    pcall(function()
+                        if child.MouseButton1Click and child.MouseButton1Click.Fire then
+                            child.MouseButton1Click:Fire()
+                            clicked = true
+                        end
+                    end)
+                    if clicked then return true end
+                    
+                    pcall(function()
+                        local det = child:FindFirstChildOfClass("ClickDetector")
+                        if det then det:FireClick(); clicked = true end
+                    end)
+                    if clicked then return true end
                 end
             end
             if search(child) then return true end
         end
         return false
     end
+
     return search(playerGui)
 end
 
@@ -303,11 +385,11 @@ end
 
 -- ===== ESP & ROLE DETECTION =====
 local RoleCache = {}
-local ChamsESPEnabled = _G.DAWN_CONFIG.ChamsESP
-local RoleESPEnabled = _G.DAWN_CONFIG.RoleESP
-local GunESPEnabled = _G.DAWN_CONFIG.GunESP
-local XrayEnabled = _G.DAWN_CONFIG.Xray
-local RoleNotifyEnabled = _G.DAWN_CONFIG.RoleNotifications
+local ChamsESPEnabled = CONFIG.ChamsESP
+local RoleESPEnabled = CONFIG.RoleESP
+local GunESPEnabled = CONFIG.GunESP
+local XrayEnabled = CONFIG.Xray
+local RoleNotifyEnabled = CONFIG.RoleNotifications
 
 local xrayCache = {}
 local xrayConn = nil
@@ -379,9 +461,7 @@ end
 
 local function ResolveRoleFromCache(char)
     for plr, role in pairs(RoleCache) do
-        if plr.Character == char then
-            return role
-        end
+        if plr.Character == char then return role end
     end
     return nil
 end
@@ -394,14 +474,10 @@ local function GetRoleColor(char)
         elseif cached == "Sheriff" then
             return Color3.fromRGB(80,150,255)
         end
-
         local murderer = GetMurdererV1()
         local sheriff = GetSheriffV1()
-        if char == murderer then
-            return Color3.fromRGB(255,60,60)
-        elseif char == sheriff then
-            return Color3.fromRGB(80,150,255)
-        end
+        if char == murderer then return Color3.fromRGB(255,60,60) end
+        if char == sheriff then return Color3.fromRGB(80,150,255) end
     end
     return Color3.fromRGB(0,255,0)
 end
@@ -434,17 +510,13 @@ end
 
 local function RemoveGunESP()
     for _, v in pairs(workspace:GetDescendants()) do
-        if v.Name == "GunESP" then
-            v:Destroy()
-        end
+        if v.Name == "GunESP" then v:Destroy() end
     end
 end
 
 local function IsPlayerPart(part)
     for _, p in pairs(Players:GetPlayers()) do
-        if p.Character and part:IsDescendantOf(p.Character) then
-            return true
-        end
+        if p.Character and part:IsDescendantOf(p.Character) then return true end
     end
     return false
 end
@@ -501,21 +573,11 @@ local function SendRoleNotification(murdererChar, sheriffChar)
     local sIcon = "https://www.roblox.com/headshot-thumbnail/image?userId=" .. sheriffPlr.UserId .. "&width=150&height=150&format=png"
 
     pcall(function()
-        game.StarterGui:SetCore("SendNotification", {
-            Title = "Murderer",
-            Text = mName,
-            Duration = 5,
-            Icon = mIcon
-        })
+        game.StarterGui:SetCore("SendNotification", { Title = "Murderer", Text = mName, Duration = 5, Icon = mIcon })
     end)
     task.delay(0.3, function()
         pcall(function()
-            game.StarterGui:SetCore("SendNotification", {
-                Title = "Sheriff",
-                Text = sName,
-                Duration = 5,
-                Icon = sIcon
-            })
+            game.StarterGui:SetCore("SendNotification", { Title = "Sheriff", Text = sName, Duration = 5, Icon = sIcon })
         end)
     end)
 end
@@ -524,7 +586,6 @@ task.spawn(function()
     while task.wait(0.5) do
         local murderer = GetMurdererV1()
         local sheriff = GetSheriffV1()
-
         if murderer and sheriff and murderer:FindFirstChild("HumanoidRootPart") and sheriff:FindFirstChild("HumanoidRootPart") then
             if not notifiedThisRound then
                 notifiedThisRound = true
@@ -539,12 +600,7 @@ task.spawn(function()
                     if sheriffPlr and RoleNotifyEnabled then
                         local sIcon = "https://www.roblox.com/headshot-thumbnail/image?userId=" .. sheriffPlr.UserId .. "&width=150&height=150&format=png"
                         pcall(function()
-                            game.StarterGui:SetCore("SendNotification", {
-                                Title = "New Sheriff",
-                                Text = sheriffPlr.Name,
-                                Duration = 5,
-                                Icon = sIcon
-                            })
+                            game.StarterGui:SetCore("SendNotification", { Title = "New Sheriff", Text = sheriffPlr.Name, Duration = 5, Icon = sIcon })
                         end)
                     end
                 end
@@ -591,14 +647,12 @@ workspace.DescendantAdded:Connect(function(obj)
     end
 end)
 
--- Initial Gun ESP for existing guns
 for _, v in pairs(workspace:GetDescendants()) do
     if v.Name == "GunDrop" and v:IsA("BasePart") then
         CreateGunESP(v)
     end
 end
 
--- ESP loop
 task.spawn(function()
     while task.wait(0.4) do
         if not ChamsESPEnabled then continue end
@@ -611,13 +665,10 @@ task.spawn(function()
     end
 end)
 
-if XrayEnabled then
-    EnableXray()
-end
+if XrayEnabled then EnableXray() end
 
--- ===== STATE VARIABLES =====
-local CONFIG = _G.DAWN_CONFIG
-local isActive = _G.DAWN_ACTIVE
+-- ===== STATE =====
+local isActive = CONFIG.ACTIVE
 local firstWarningSent = false
 local gui = nil
 local announcementConnection = nil
@@ -672,8 +723,7 @@ local function sendChat(msg)
 end
 
 local function updateBlacklistCounter()
-    local visited = getVisitedServers()
-    local count = #visited
+    local count = #(getVisitedServers())
     if blacklistLabelRef then blacklistLabelRef.Text = "🚫 " .. count end
     return count
 end
@@ -723,7 +773,8 @@ end
 local function startSystem()
     if isActive then return end
     isActive = true
-    _G.DAWN_ACTIVE = true
+    CONFIG.ACTIVE = true
+    saveSettings()
     firstWarningSent = false
     savePosition()
     sendChat("[ANNOUNCEMENT] i will not stop kill all untill someone gives me 4 items")
@@ -737,7 +788,8 @@ end
 
 local function stopSystem()
     isActive = false
-    _G.DAWN_ACTIVE = false
+    CONFIG.ACTIVE = false
+    saveSettings()
     if announcementConnection then announcementConnection:Disconnect(); announcementConnection = nil end
     if flingCoroutine then coroutine.close(flingCoroutine); flingCoroutine = nil end
     stopTradeListener()
@@ -755,14 +807,10 @@ local function reloadScript()
     if _G.SCRIPT_URL then
         pcall(function()
             local url = _G.SCRIPT_URL
-            local success, result = pcall(function()
-                return game:HttpGet(url)
-            end)
+            local success, result = pcall(function() return game:HttpGet(url) end)
             if success and result then
                 local success, err = pcall(loadstring, result)
-                if not success then
-                    warn("Script load error:", err)
-                end
+                if not success then warn("Script load error:", err) end
             else
                 warn("Failed to fetch script from URL.")
             end
@@ -779,11 +827,7 @@ local function grabGun()
     local gun = workspace:FindFirstChild("GunDrop", true)
     if not gun then
         pcall(function()
-            game.StarterGui:SetCore("SendNotification", {
-                Title = "Gun Grab",
-                Text = "No gun found.",
-                Duration = 2
-            })
+            game.StarterGui:SetCore("SendNotification", { Title = "Gun Grab", Text = "No gun found.", Duration = 2 })
         end)
         return
     end
@@ -876,7 +920,7 @@ local function createDawnHubGUI()
     logo.Size = UDim2.new(0.4, 0, 1, 0)
     logo.Position = UDim2.new(0, 16, 0, 0)
     logo.BackgroundTransparency = 1
-    logo.Text = "DAWN.HUB v11"
+    logo.Text = "DAWN.HUB v12"
     logo.TextColor3 = Accent
     logo.TextSize = 18
     logo.Font = Enum.Font.GothamBold
@@ -997,7 +1041,6 @@ local function createDawnHubGUI()
         page.AutomaticCanvasSize = Enum.AutomaticSize.Y
         page.Visible = false
         pages[name] = page
-        -- Add UIListLayout
         local list = Instance.new("UIListLayout", page)
         list.FillDirection = Enum.FillDirection.Vertical
         list.SortOrder = Enum.SortOrder.LayoutOrder
@@ -1015,7 +1058,6 @@ local function createDawnHubGUI()
     local settingsPage = createPage("Settings")
 
     -- ===== PAGE CONTENT =====
-    -- Main (changelog)
     local function createChangelogEntry(parent, version, changes)
         local frame = Instance.new("Frame", parent)
         frame.Size = UDim2.new(1, 0, 0, 50)
@@ -1043,12 +1085,12 @@ local function createDawnHubGUI()
         desc.TextXAlignment = Enum.TextXAlignment.Left
     end
 
+    createChangelogEntry(mainPage, "v12", "File‑based persistence for settings, blacklist, active state")
+    createChangelogEntry(mainPage, "v11.1", "Fixed UI clicking (getconnections, simulated click)")
     createChangelogEntry(mainPage, "v11", "Full integration of ESP, Gun Grab, X-Ray, Role Detection")
     createChangelogEntry(mainPage, "v10", "Persistent settings, Auto Trade default ON")
-    createChangelogEntry(mainPage, "v9", "Auto Trade added, improved UI")
-    createChangelogEntry(mainPage, "v8", "Anti-Fling bypass, God mode removed")
 
-    -- Trade Page
+    -- Trade Page (with toggle)
     local function createToggleRow(parent, titleText, descText, default, callback)
         local row = Instance.new("Frame", parent)
         row.Size = UDim2.new(1, 0, 0, 48)
@@ -1109,16 +1151,11 @@ local function createDawnHubGUI()
         return setState
     end
 
-    -- Trade toggle
     local tradeToggle = createToggleRow(tradePage, "Auto Trade", "Automatically accept trades with 4+ skins", CONFIG.AUTO_TRADE, function(v)
         CONFIG.AUTO_TRADE = v
-        _G.DAWN_CONFIG.AUTO_TRADE = v
+        saveSettings()
         AUTO_TRADE_ENABLED = v
-        if v and isActive then
-            setupTradeListener()
-        elseif not v then
-            stopTradeListener()
-        end
+        if v and isActive then setupTradeListener() elseif not v then stopTradeListener() end
     end)
 
     -- ESP Page
@@ -1129,34 +1166,34 @@ local function createDawnHubGUI()
 
     espToggles.chams = createEspToggle("Chams ESP", "Highlight all players", CONFIG.ChamsESP, function(v)
         CONFIG.ChamsESP = v
-        _G.DAWN_CONFIG.ChamsESP = v
+        saveSettings()
         ChamsESPEnabled = v
         if not v then RemoveChamsESP() end
     end)
 
     espToggles.role = createEspToggle("Role ESP", "Color murderer & sheriff", CONFIG.RoleESP, function(v)
         CONFIG.RoleESP = v
-        _G.DAWN_CONFIG.RoleESP = v
+        saveSettings()
         RoleESPEnabled = v
     end)
 
     espToggles.gun = createEspToggle("Gun ESP", "Highlight dropped gun", CONFIG.GunESP, function(v)
         CONFIG.GunESP = v
-        _G.DAWN_CONFIG.GunESP = v
+        saveSettings()
         GunESPEnabled = v
         if not v then RemoveGunESP() end
     end)
 
     espToggles.xray = createEspToggle("X-Ray", "See through walls (murderer-style)", CONFIG.Xray, function(v)
         CONFIG.Xray = v
-        _G.DAWN_CONFIG.Xray = v
+        saveSettings()
         XrayEnabled = v
         if v then EnableXray() else DisableXray() end
     end)
 
     espToggles.notify = createEspToggle("Role Notifications", "Notify murderer & sheriff each round", CONFIG.RoleNotifications, function(v)
         CONFIG.RoleNotifications = v
-        _G.DAWN_CONFIG.RoleNotifications = v
+        saveSettings()
         RoleNotifyEnabled = v
     end)
 
@@ -1287,7 +1324,6 @@ local function createDawnHubGUI()
         for _, p in pairs(pages) do p.Visible = false end
         if pages[name] then pages[name].Visible = true end
         sectionTitle.Text = name
-        -- Update sidebar buttons
         local btns = {mainBtn, tradeBtn, espBtn, teleportBtn, miscBtn, settingsBtn}
         local names = {"Main", "Trade", "ESP", "Teleport", "Misc", "Settings"}
         for i, btn in ipairs(btns) do
@@ -1305,7 +1341,7 @@ local function createDawnHubGUI()
 
     setPage("Main")
 
-    -- ===== HOTKEYS (global) =====
+    -- ===== HOTKEYS =====
     UserInputService.InputBegan:Connect(function(input, gp)
         if gp then return end
         if input.KeyCode == guiHotkey then
@@ -1314,18 +1350,14 @@ local function createDawnHubGUI()
         if input.KeyCode == xrayHotkey then
             local new = not XrayEnabled
             XrayEnabled = new
-            _G.DAWN_CONFIG.Xray = new
+            CONFIG.Xray = new
+            saveSettings()
             if new then EnableXray() else DisableXray() end
-            -- Update toggle UI if possible (we'll just call the toggle setter)
-            -- We can't directly update the toggle without a reference, but we'll use the state variable.
-            -- The toggle will sync on next UI update? We'll just rely on the state.
-            espToggles.xray(new)
+            if espToggles and espToggles.xray then espToggles.xray(new) end
         end
     end)
 
-    -- ===== START/STOP LOGIC (unchanged) =====
-    -- We need to add the START button somewhere, maybe in the Main page or a fixed location.
-    -- We'll place a START/STOP button in the top right of the content area.
+    -- ===== START/STOP BUTTON =====
     local actionFrame = Instance.new("Frame", contentRoot)
     actionFrame.Size = UDim2.new(1, 0, 0, 40)
     actionFrame.Position = UDim2.new(0, 0, 0, 0)
@@ -1378,7 +1410,8 @@ local function createDawnHubGUI()
         end
     end)
 
-    if _G.DAWN_ACTIVE then
+    -- Auto‑start if was active (file‑based)
+    if CONFIG.ACTIVE then
         startSystem()
         startBtn.Text = "STOP"
         statusDot.BackgroundColor3 = Color3.fromRGB(100,255,100)
@@ -1386,7 +1419,7 @@ local function createDawnHubGUI()
         statusLabel.TextColor3 = Color3.fromRGB(100,255,100)
     end
 
-    -- Minimize function (same)
+    -- Minimize
     local function toggleMinimize()
         isMinimized = not isMinimized
         local targetSize = isMinimized and minimizedSize or fullSize
@@ -1423,9 +1456,9 @@ spawn(function()
         while isVisited() and attempts < 5 do
             attempts = attempts + 1
             task.wait(1)
-            local visited = addVisitedServer()
+            addVisitedServer()  -- ensure the current server is blacklisted
             local options = Instance.new("TeleportOptions")
-            options:SetTeleportData({ visitedServers = visited })
+            options:SetTeleportData({ visitedServers = getVisitedServers() })
             pcall(function() TeleportService:Teleport(game.PlaceId, player, options) end)
         end
         if attempts >= 5 then clearVisited() end
@@ -1435,7 +1468,7 @@ end)
 
 local success, err = pcall(createDawnHubGUI)
 if success then
-    print("Dawn Hub v11 loaded.")
+    print("Dawn Hub v12 loaded.")
 else
     warn("UI error: " .. tostring(err))
 end
