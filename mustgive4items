@@ -1,5 +1,3 @@
--- DAWN HUB v11 – All Features Integrated
-
 if _G.SCRIPT_RUNNING then return end
 _G.SCRIPT_RUNNING = true
 
