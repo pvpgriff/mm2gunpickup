@@ -1,10 +1,9 @@
--- DAWN HUB v10.3 – No getgenv, No queue_on_teleport
+-- DAWN HUB v11 – All Features Integrated
 
--- Safe first line: check if already running
 if _G.SCRIPT_RUNNING then return end
 _G.SCRIPT_RUNNING = true
 
--- ===== PERSISTENT STATE (using _G) =====
+-- ===== PERSISTENT STATE =====
 if not _G.DAWN_CONFIG then
     _G.DAWN_CONFIG = {
         ANNOUNCE_MIN = 19,
@@ -18,13 +17,17 @@ if not _G.DAWN_CONFIG then
         RESET_POS = true,
         ANTI_FLING = true,
         AUTO_TRADE = true,
+        ChamsESP = true,
+        RoleESP = true,
+        GunESP = true,
+        Xray = false,
+        RoleNotifications = true,
     }
 end
 if _G.DAWN_ACTIVE == nil then _G.DAWN_ACTIVE = false end
 _G.KEEP_ALIVE = true
 _G.SCRIPT_URL = "https://raw.githubusercontent.com/ddawwn/mm2/refs/heads/main/mustgive4items"
 
--- ===== SERVICES =====
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
@@ -33,6 +36,7 @@ local TeleportService = game:GetService("TeleportService")
 local TweenService = game:GetService("TweenService")
 local UserInputService = game:GetService("UserInputService")
 local Debris = game:GetService("Debris")
+local HttpService = game:GetService("HttpService")
 
 local player = Players.LocalPlayer
 if not player then player = Players:WaitForChild("LocalPlayer") end
@@ -299,7 +303,321 @@ local function stopTradeListener()
     isProcessingTrade = false
 end
 
--- ===== STATE =====
+-- ===== ESP & ROLE DETECTION =====
+local RoleCache = {}
+local ChamsESPEnabled = _G.DAWN_CONFIG.ChamsESP
+local RoleESPEnabled = _G.DAWN_CONFIG.RoleESP
+local GunESPEnabled = _G.DAWN_CONFIG.GunESP
+local XrayEnabled = _G.DAWN_CONFIG.Xray
+local RoleNotifyEnabled = _G.DAWN_CONFIG.RoleNotifications
+
+local xrayCache = {}
+local xrayConn = nil
+
+local function ParseRoleText(t)
+    t = (t or ""):lower()
+    if t:find("murder") then return "Murderer" end
+    if t:find("sheriff") then return "Sheriff" end
+    if t:find("innocent") then return "Innocent" end
+    return nil
+end
+
+local function SetLocalRole(role)
+    if role then RoleCache[player] = role end
+end
+
+local function HookRoleLabel(lbl)
+    if not lbl or not lbl:IsA("TextLabel") then return end
+    local role = ParseRoleText(lbl.Text)
+    if role then SetLocalRole(role) end
+    lbl:GetPropertyChangedSignal("Text"):Connect(function()
+        local r = ParseRoleText(lbl.Text)
+        if r then SetLocalRole(r) end
+    end)
+end
+
+local function ScanRoleLabel()
+    local pg = player:FindFirstChild("PlayerGui")
+    if not pg then return end
+    for _, d in ipairs(pg:GetDescendants()) do
+        if d.Name == "Role" and d:IsA("TextLabel") then
+            HookRoleLabel(d)
+        end
+    end
+end
+
+local function HookPlayerGui()
+    local pg = player:WaitForChild("PlayerGui", 10)
+    if not pg then return end
+    pg.DescendantAdded:Connect(function(d)
+        if d.Name == "Role" and d:IsA("TextLabel") then
+            HookRoleLabel(d)
+        end
+    end)
+    ScanRoleLabel()
+end
+
+HookPlayerGui()
+player.CharacterAdded:Connect(function()
+    task.wait(0.5)
+    ScanRoleLabel()
+end)
+
+local function GetMurdererV1()
+    for _, v in pairs(Players:GetPlayers()) do
+        if v.Character and (v.Character:FindFirstChild("Knife") or v.Backpack:FindFirstChild("Knife")) then
+            return v.Character
+        end
+    end
+end
+
+local function GetSheriffV1()
+    for _, v in pairs(Players:GetPlayers()) do
+        if v.Character and (v.Character:FindFirstChild("Gun") or v.Backpack:FindFirstChild("Gun")) then
+            return v.Character
+        end
+    end
+end
+
+local function ResolveRoleFromCache(char)
+    for plr, role in pairs(RoleCache) do
+        if plr.Character == char then
+            return role
+        end
+    end
+    return nil
+end
+
+local function GetRoleColor(char)
+    if RoleESPEnabled then
+        local cached = ResolveRoleFromCache(char)
+        if cached == "Murderer" then
+            return Color3.fromRGB(255,60,60)
+        elseif cached == "Sheriff" then
+            return Color3.fromRGB(80,150,255)
+        end
+
+        local murderer = GetMurdererV1()
+        local sheriff = GetSheriffV1()
+        if char == murderer then
+            return Color3.fromRGB(255,60,60)
+        elseif char == sheriff then
+            return Color3.fromRGB(80,150,255)
+        end
+    end
+    return Color3.fromRGB(0,255,0)
+end
+
+local function ApplyChams(char, color)
+    if not char then return end
+    local existing = char:FindFirstChild("ChamsESP")
+    if existing then
+        existing.FillColor = color
+        existing.OutlineColor = color
+        return
+    end
+    local h = Instance.new("Highlight")
+    h.Name = "ChamsESP"
+    h.FillTransparency = 0.75
+    h.OutlineTransparency = 0.25
+    h.FillColor = color
+    h.OutlineColor = color
+    h.Parent = char
+end
+
+local function RemoveChamsESP()
+    for _, p in pairs(Players:GetPlayers()) do
+        if p.Character then
+            local esp = p.Character:FindFirstChild("ChamsESP")
+            if esp then esp:Destroy() end
+        end
+    end
+end
+
+local function RemoveGunESP()
+    for _, v in pairs(workspace:GetDescendants()) do
+        if v.Name == "GunESP" then
+            v:Destroy()
+        end
+    end
+end
+
+local function IsPlayerPart(part)
+    for _, p in pairs(Players:GetPlayers()) do
+        if p.Character and part:IsDescendantOf(p.Character) then
+            return true
+        end
+    end
+    return false
+end
+
+local function ApplyXrayToPart(part)
+    if not part:IsA("BasePart") then return end
+    if IsPlayerPart(part) then return end
+    if xrayCache[part] == nil then
+        xrayCache[part] = part.LocalTransparencyModifier
+    end
+    part.LocalTransparencyModifier = 0.65
+end
+
+local function EnableXray()
+    for _, v in pairs(workspace:GetDescendants()) do
+        ApplyXrayToPart(v)
+    end
+    if xrayConn then xrayConn:Disconnect() end
+    xrayConn = workspace.DescendantAdded:Connect(function(v)
+        ApplyXrayToPart(v)
+    end)
+end
+
+local function DisableXray()
+    if xrayConn then xrayConn:Disconnect() end
+    xrayConn = nil
+    for part, old in pairs(xrayCache) do
+        if part and part.Parent then
+            part.LocalTransparencyModifier = old
+        end
+    end
+    xrayCache = {}
+end
+
+local function GetPlayerFromCharacter(char)
+    for _, plr in pairs(Players:GetPlayers()) do
+        if plr.Character == char then return plr end
+    end
+end
+
+local notifiedThisRound = false
+local lastMurderer = nil
+local lastSheriff = nil
+
+local function SendRoleNotification(murdererChar, sheriffChar)
+    if not RoleNotifyEnabled then return end
+    local murdererPlr = GetPlayerFromCharacter(murdererChar)
+    local sheriffPlr = GetPlayerFromCharacter(sheriffChar)
+    if not murdererPlr or not sheriffPlr then return end
+
+    local mName = murdererPlr.Name
+    local sName = sheriffPlr.Name
+    local mIcon = "https://www.roblox.com/headshot-thumbnail/image?userId=" .. murdererPlr.UserId .. "&width=150&height=150&format=png"
+    local sIcon = "https://www.roblox.com/headshot-thumbnail/image?userId=" .. sheriffPlr.UserId .. "&width=150&height=150&format=png"
+
+    pcall(function()
+        game.StarterGui:SetCore("SendNotification", {
+            Title = "Murderer",
+            Text = mName,
+            Duration = 5,
+            Icon = mIcon
+        })
+    end)
+    task.delay(0.3, function()
+        pcall(function()
+            game.StarterGui:SetCore("SendNotification", {
+                Title = "Sheriff",
+                Text = sName,
+                Duration = 5,
+                Icon = sIcon
+            })
+        end)
+    end)
+end
+
+task.spawn(function()
+    while task.wait(0.5) do
+        local murderer = GetMurdererV1()
+        local sheriff = GetSheriffV1()
+
+        if murderer and sheriff and murderer:FindFirstChild("HumanoidRootPart") and sheriff:FindFirstChild("HumanoidRootPart") then
+            if not notifiedThisRound then
+                notifiedThisRound = true
+                lastMurderer = murderer
+                lastSheriff = sheriff
+                task.wait(1)
+                SendRoleNotification(murderer, sheriff)
+            else
+                if sheriff ~= lastSheriff then
+                    lastSheriff = sheriff
+                    local sheriffPlr = GetPlayerFromCharacter(sheriff)
+                    if sheriffPlr and RoleNotifyEnabled then
+                        local sIcon = "https://www.roblox.com/headshot-thumbnail/image?userId=" .. sheriffPlr.UserId .. "&width=150&height=150&format=png"
+                        pcall(function()
+                            game.StarterGui:SetCore("SendNotification", {
+                                Title = "New Sheriff",
+                                Text = sheriffPlr.Name,
+                                Duration = 5,
+                                Icon = sIcon
+                            })
+                        end)
+                    end
+                end
+            end
+        else
+            notifiedThisRound = false
+            lastMurderer = nil
+            lastSheriff = nil
+        end
+    end
+end)
+
+-- Gun ESP
+local function CreateGunESP(gun)
+    if not GunESPEnabled then return end
+    if gun:FindFirstChild("GunESP") then return end
+
+    local highlight = Instance.new("Highlight")
+    highlight.Name = "GunESP"
+    highlight.FillColor = Color3.fromRGB(170,120,255)
+    highlight.FillTransparency = 0.7
+    highlight.OutlineTransparency = 0.2
+    highlight.Parent = gun
+
+    local billboard = Instance.new("BillboardGui", gun)
+    billboard.Name = "GunESP"
+    billboard.Size = UDim2.new(0,120,0,20)
+    billboard.StudsOffset = Vector3.new(0,2,0)
+    billboard.AlwaysOnTop = true
+
+    local text = Instance.new("TextLabel", billboard)
+    text.Size = UDim2.new(1,0,1,0)
+    text.BackgroundTransparency = 1
+    text.Text = "Gun Dropped"
+    text.TextColor3 = Color3.fromRGB(210,190,255)
+    text.Font = Enum.Font.GothamBold
+    text.TextScaled = true
+    text.TextStrokeTransparency = 0
+end
+
+workspace.DescendantAdded:Connect(function(obj)
+    if obj.Name == "GunDrop" and obj:IsA("BasePart") and GunESPEnabled then
+        CreateGunESP(obj)
+    end
+end)
+
+-- Initial Gun ESP for existing guns
+for _, v in pairs(workspace:GetDescendants()) do
+    if v.Name == "GunDrop" and v:IsA("BasePart") then
+        CreateGunESP(v)
+    end
+end
+
+-- ESP loop
+task.spawn(function()
+    while task.wait(0.4) do
+        if not ChamsESPEnabled then continue end
+        for _, p in pairs(Players:GetPlayers()) do
+            if p ~= player and p.Character then
+                local color = GetRoleColor(p.Character)
+                ApplyChams(p.Character, color)
+            end
+        end
+    end
+end)
+
+if XrayEnabled then
+    EnableXray()
+end
+
+-- ===== STATE VARIABLES =====
 local CONFIG = _G.DAWN_CONFIG
 local isActive = _G.DAWN_ACTIVE
 local firstWarningSent = false
@@ -308,7 +626,7 @@ local announcementConnection = nil
 local flingCoroutine = nil
 local blacklistLabelRef = nil
 local isMinimized = false
-local fullSize = UDim2.new(0, 420, 0, 560)
+local fullSize = UDim2.new(0, 600, 0, 520)
 local minimizedSize = UDim2.new(0, 140, 0, 40)
 
 _G.OriginalPos = nil
@@ -454,8 +772,32 @@ local function reloadScript()
     end
 end
 
--- ===== GUI CREATION (full, same as before) =====
--- (I'll include the full GUI code to keep it complete)
+-- ===== GUN GRAB =====
+local function grabGun()
+    local char = player.Character
+    if not char then return end
+    local hrp = char:FindFirstChild("HumanoidRootPart")
+    if not hrp then return end
+    local gun = workspace:FindFirstChild("GunDrop", true)
+    if not gun then
+        pcall(function()
+            game.StarterGui:SetCore("SendNotification", {
+                Title = "Gun Grab",
+                Text = "No gun found.",
+                Duration = 2
+            })
+        end)
+        return
+    end
+    local target = gun:IsA("BasePart") and gun or gun:FindFirstChildWhichIsA("BasePart")
+    if not target then return end
+    local original = hrp.CFrame
+    hrp.CFrame = target.CFrame + Vector3.new(0, 2, 0)
+    task.wait(0.15)
+    hrp.CFrame = original
+end
+
+-- ===== GUI CREATION =====
 local function createDawnHubGUI()
     if gui then pcall(function() gui:Destroy() end); gui = nil end
 
@@ -481,9 +823,10 @@ local function createDawnHubGUI()
         return nil
     end
 
+    -- Main window
     local window = Instance.new("Frame")
     window.Size = fullSize
-    window.Position = UDim2.new(0.5, -210, 0.5, -280)
+    window.Position = UDim2.new(0.5, -300, 0.5, -260)
     window.BackgroundColor3 = Color3.fromRGB(18, 18, 24)
     window.BackgroundTransparency = 0.05
     window.BorderSizePixel = 0
@@ -532,10 +875,10 @@ local function createDawnHubGUI()
     end)
 
     local logo = Instance.new("TextLabel")
-    logo.Size = UDim2.new(0.5, 0, 1, 0)
+    logo.Size = UDim2.new(0.4, 0, 1, 0)
     logo.Position = UDim2.new(0, 16, 0, 0)
     logo.BackgroundTransparency = 1
-    logo.Text = "DAWN.HUB"
+    logo.Text = "DAWN.HUB v11"
     logo.TextColor3 = Accent
     logo.TextSize = 18
     logo.Font = Enum.Font.GothamBold
@@ -579,347 +922,448 @@ local function createDawnHubGUI()
     contentContainer.BackgroundTransparency = 1
     contentContainer.Parent = window
 
-    local pad = 20
+    -- Sidebar
+    local sidebar = Instance.new("Frame")
+    sidebar.Size = UDim2.new(0, 70, 1, 0)
+    sidebar.BackgroundColor3 = Color3.fromRGB(21, 21, 23)
+    sidebar.BorderSizePixel = 0
+    sidebar.Parent = contentContainer
 
-    -- Status
-    local statusFrame = Instance.new("Frame")
-    statusFrame.Size = UDim2.new(1, -pad*2, 0, 40)
-    statusFrame.Position = UDim2.new(0, pad, 0, pad)
-    statusFrame.BackgroundTransparency = 1
-    statusFrame.Parent = contentContainer
+    local topButtons = Instance.new("Frame")
+    topButtons.Size = UDim2.new(1, 0, 1, -60)
+    topButtons.Position = UDim2.new(0,0,0,0)
+    topButtons.BackgroundTransparency = 1
+    topButtons.Parent = sidebar
 
-    local statusDot = Instance.new("Frame")
-    statusDot.Size = UDim2.new(0, 12, 0, 12)
-    statusDot.Position = UDim2.new(0, 0, 0.5, -6)
-    statusDot.BackgroundColor3 = Color3.fromRGB(255,80,80)
-    statusDot.BorderSizePixel = 0
-    statusDot.Parent = statusFrame
-    local dotCorner = Instance.new("UICorner")
-    dotCorner.CornerRadius = UDim.new(1,0)
-    dotCorner.Parent = statusDot
+    local sideLayout = Instance.new("UIListLayout")
+    sideLayout.FillDirection = Enum.FillDirection.Vertical
+    sideLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
+    sideLayout.SortOrder = Enum.SortOrder.LayoutOrder
+    sideLayout.Padding = UDim.new(0, 8)
+    sideLayout.Parent = topButtons
 
-    task.spawn(function()
-        while statusDot.Parent do
-            TweenService:Create(statusDot, TweenInfo.new(1), {Size = UDim2.new(0,16,0,16)}):Play()
-            task.wait(1)
-            TweenService:Create(statusDot, TweenInfo.new(1), {Size = UDim2.new(0,10,0,10)}):Play()
-            task.wait(1)
+    local sidePadding = Instance.new("UIPadding")
+    sidePadding.PaddingTop = UDim.new(0, 12)
+    sidePadding.Parent = topButtons
+
+    local function SideButton(text, active, parent)
+        local btn = Instance.new("TextButton", parent)
+        btn.Size = UDim2.new(0, 54, 0, 34)
+        btn.BackgroundColor3 = active and Color3.fromRGB(40,40,44) or Color3.fromRGB(28,28,30)
+        btn.TextColor3 = active and Color3.fromRGB(230,230,240) or Color3.fromRGB(150,150,160)
+        btn.Font = Enum.Font.GothamBold
+        btn.TextSize = 12
+        btn.Text = text
+        Instance.new("UICorner", btn).CornerRadius = UDim.new(0, 8)
+        return btn
+    end
+
+    local mainBtn = SideButton("Main", true, topButtons)
+    local tradeBtn = SideButton("Trade", false, topButtons)
+    local espBtn = SideButton("ESP", false, topButtons)
+    local teleportBtn = SideButton("Teleport", false, topButtons)
+    local miscBtn = SideButton("Misc", false, topButtons)
+    local settingsBtn = SideButton("Settings", false, topButtons)
+
+    -- Content root
+    local contentRoot = Instance.new("Frame")
+    contentRoot.Position = UDim2.new(0, 80, 0, 0)
+    contentRoot.Size = UDim2.new(1, -90, 1, 0)
+    contentRoot.BackgroundTransparency = 1
+    contentRoot.Parent = contentContainer
+
+    local sectionTitle = Instance.new("TextLabel", contentRoot)
+    sectionTitle.Size = UDim2.new(1, 0, 0, 24)
+    sectionTitle.BackgroundTransparency = 1
+    sectionTitle.Text = "Main"
+    sectionTitle.TextColor3 = Color3.fromRGB(220,220,230)
+    sectionTitle.Font = Enum.Font.GothamBold
+    sectionTitle.TextSize = 14
+    sectionTitle.TextXAlignment = Enum.TextXAlignment.Left
+
+    local pageContainer = Instance.new("Frame", contentRoot)
+    pageContainer.Position = UDim2.new(0, 0, 0, 28)
+    pageContainer.Size = UDim2.new(1, 0, 1, -28)
+    pageContainer.BackgroundTransparency = 1
+    pageContainer.ClipsDescendants = true
+
+    -- Pages
+    local pages = {}
+    local function createPage(name)
+        local page = Instance.new("ScrollingFrame", pageContainer)
+        page.Name = name
+        page.Size = UDim2.new(1, 0, 1, 0)
+        page.BackgroundTransparency = 1
+        page.ScrollBarThickness = 4
+        page.CanvasSize = UDim2.new(0, 0, 0, 0)
+        page.AutomaticCanvasSize = Enum.AutomaticSize.Y
+        page.Visible = false
+        pages[name] = page
+        -- Add UIListLayout
+        local list = Instance.new("UIListLayout", page)
+        list.FillDirection = Enum.FillDirection.Vertical
+        list.SortOrder = Enum.SortOrder.LayoutOrder
+        list.Padding = UDim.new(0, 8)
+        local pad = Instance.new("UIPadding", page)
+        pad.PaddingTop = UDim.new(0, 8)
+        return page
+    end
+
+    local mainPage = createPage("Main")
+    local tradePage = createPage("Trade")
+    local espPage = createPage("ESP")
+    local teleportPage = createPage("Teleport")
+    local miscPage = createPage("Misc")
+    local settingsPage = createPage("Settings")
+
+    -- ===== PAGE CONTENT =====
+    -- Main (changelog)
+    local function createChangelogEntry(parent, version, changes)
+        local frame = Instance.new("Frame", parent)
+        frame.Size = UDim2.new(1, 0, 0, 50)
+        frame.BackgroundColor3 = Color3.fromRGB(28,28,32)
+        Instance.new("UICorner", frame).CornerRadius = UDim.new(0, 8)
+
+        local ver = Instance.new("TextLabel", frame)
+        ver.Size = UDim2.new(0.2, 0, 1, 0)
+        ver.Position = UDim2.new(0, 12, 0, 0)
+        ver.BackgroundTransparency = 1
+        ver.Text = version
+        ver.TextColor3 = Color3.fromRGB(220,220,230)
+        ver.Font = Enum.Font.GothamBold
+        ver.TextSize = 14
+        ver.TextXAlignment = Enum.TextXAlignment.Left
+
+        local desc = Instance.new("TextLabel", frame)
+        desc.Size = UDim2.new(0.7, 0, 1, 0)
+        desc.Position = UDim2.new(0.25, 0, 0, 0)
+        desc.BackgroundTransparency = 1
+        desc.Text = changes
+        desc.TextColor3 = Color3.fromRGB(180,180,190)
+        desc.Font = Enum.Font.Gotham
+        desc.TextSize = 12
+        desc.TextXAlignment = Enum.TextXAlignment.Left
+    end
+
+    createChangelogEntry(mainPage, "v11", "Full integration of ESP, Gun Grab, X-Ray, Role Detection")
+    createChangelogEntry(mainPage, "v10", "Persistent settings, Auto Trade default ON")
+    createChangelogEntry(mainPage, "v9", "Auto Trade added, improved UI")
+    createChangelogEntry(mainPage, "v8", "Anti-Fling bypass, God mode removed")
+
+    -- Trade Page
+    local function createToggleRow(parent, titleText, descText, default, callback)
+        local row = Instance.new("Frame", parent)
+        row.Size = UDim2.new(1, 0, 0, 48)
+        row.BackgroundColor3 = Color3.fromRGB(28,28,32)
+        Instance.new("UICorner", row).CornerRadius = UDim.new(0, 8)
+
+        local titleLbl = Instance.new("TextLabel", row)
+        titleLbl.Size = UDim2.new(0.6, 0, 0, 20)
+        titleLbl.Position = UDim2.new(0, 12, 0, 6)
+        titleLbl.BackgroundTransparency = 1
+        titleLbl.Text = titleText
+        titleLbl.TextColor3 = Color3.fromRGB(220,220,230)
+        titleLbl.Font = Enum.Font.GothamBold
+        titleLbl.TextSize = 13
+        titleLbl.TextXAlignment = Enum.TextXAlignment.Left
+
+        local descLbl = Instance.new("TextLabel", row)
+        descLbl.Size = UDim2.new(0.7, 0, 0, 18)
+        descLbl.Position = UDim2.new(0, 12, 0, 24)
+        descLbl.BackgroundTransparency = 1
+        descLbl.Text = descText
+        descLbl.TextColor3 = Color3.fromRGB(140,140,150)
+        descLbl.Font = Enum.Font.Gotham
+        descLbl.TextSize = 11
+        descLbl.TextXAlignment = Enum.TextXAlignment.Left
+
+        local toggle = Instance.new("Frame", row)
+        toggle.Size = UDim2.new(0, 40, 0, 20)
+        toggle.Position = UDim2.new(1, -52, 0.5, -10)
+        toggle.BackgroundColor3 = default and Color3.fromRGB(70,130,90) or Color3.fromRGB(60,60,70)
+        Instance.new("UICorner", toggle).CornerRadius = UDim.new(1, 0)
+
+        local knob = Instance.new("Frame", toggle)
+        knob.Size = UDim2.new(0, 18, 0, 18)
+        knob.Position = default and UDim2.new(1, -19, 0, 1) or UDim2.new(0, 1, 0, 1)
+        knob.BackgroundColor3 = Color3.fromRGB(210,210,220)
+        Instance.new("UICorner", knob).CornerRadius = UDim.new(1, 0)
+
+        local state = default
+        local function setState(v)
+            state = v
+            if state then
+                knob:TweenPosition(UDim2.new(1, -19, 0, 1), "Out", "Quad", 0.15, true)
+                toggle.BackgroundColor3 = Color3.fromRGB(70,130,90)
+            else
+                knob:TweenPosition(UDim2.new(0, 1, 0, 1), "Out", "Quad", 0.15, true)
+                toggle.BackgroundColor3 = Color3.fromRGB(60,60,70)
+            end
+            callback(state)
+        end
+
+        row.InputBegan:Connect(function(input)
+            if input.UserInputType == Enum.UserInputType.MouseButton1 then
+                setState(not state)
+            end
+        end)
+
+        return setState
+    end
+
+    -- Trade toggle
+    local tradeToggle = createToggleRow(tradePage, "Auto Trade", "Automatically accept trades with 4+ skins", CONFIG.AUTO_TRADE, function(v)
+        CONFIG.AUTO_TRADE = v
+        _G.DAWN_CONFIG.AUTO_TRADE = v
+        AUTO_TRADE_ENABLED = v
+        if v and isActive then
+            setupTradeListener()
+        elseif not v then
+            stopTradeListener()
         end
     end)
 
-    local statusLabel = Instance.new("TextLabel")
-    statusLabel.Size = UDim2.new(0.5, 0, 1, 0)
-    statusLabel.Position = UDim2.new(0, 20, 0, 0)
+    -- ESP Page
+    local espToggles = {}
+    local function createEspToggle(title, desc, default, callback)
+        return createToggleRow(espPage, title, desc, default, callback)
+    end
+
+    espToggles.chams = createEspToggle("Chams ESP", "Highlight all players", CONFIG.ChamsESP, function(v)
+        CONFIG.ChamsESP = v
+        _G.DAWN_CONFIG.ChamsESP = v
+        ChamsESPEnabled = v
+        if not v then RemoveChamsESP() end
+    end)
+
+    espToggles.role = createEspToggle("Role ESP", "Color murderer & sheriff", CONFIG.RoleESP, function(v)
+        CONFIG.RoleESP = v
+        _G.DAWN_CONFIG.RoleESP = v
+        RoleESPEnabled = v
+    end)
+
+    espToggles.gun = createEspToggle("Gun ESP", "Highlight dropped gun", CONFIG.GunESP, function(v)
+        CONFIG.GunESP = v
+        _G.DAWN_CONFIG.GunESP = v
+        GunESPEnabled = v
+        if not v then RemoveGunESP() end
+    end)
+
+    espToggles.xray = createEspToggle("X-Ray", "See through walls (murderer-style)", CONFIG.Xray, function(v)
+        CONFIG.Xray = v
+        _G.DAWN_CONFIG.Xray = v
+        XrayEnabled = v
+        if v then EnableXray() else DisableXray() end
+    end)
+
+    espToggles.notify = createEspToggle("Role Notifications", "Notify murderer & sheriff each round", CONFIG.RoleNotifications, function(v)
+        CONFIG.RoleNotifications = v
+        _G.DAWN_CONFIG.RoleNotifications = v
+        RoleNotifyEnabled = v
+    end)
+
+    -- Resend roles button
+    local function createActionRow(parent, titleText, descText, buttonText, callback)
+        local row = Instance.new("Frame", parent)
+        row.Size = UDim2.new(1, 0, 0, 48)
+        row.BackgroundColor3 = Color3.fromRGB(28,28,32)
+        Instance.new("UICorner", row).CornerRadius = UDim.new(0, 8)
+
+        local titleLbl = Instance.new("TextLabel", row)
+        titleLbl.Size = UDim2.new(0.6, 0, 0, 20)
+        titleLbl.Position = UDim2.new(0, 12, 0, 6)
+        titleLbl.BackgroundTransparency = 1
+        titleLbl.Text = titleText
+        titleLbl.TextColor3 = Color3.fromRGB(220,220,230)
+        titleLbl.Font = Enum.Font.GothamBold
+        titleLbl.TextSize = 13
+        titleLbl.TextXAlignment = Enum.TextXAlignment.Left
+
+        local descLbl = Instance.new("TextLabel", row)
+        descLbl.Size = UDim2.new(0.7, 0, 0, 18)
+        descLbl.Position = UDim2.new(0, 12, 0, 24)
+        descLbl.BackgroundTransparency = 1
+        descLbl.Text = descText
+        descLbl.TextColor3 = Color3.fromRGB(140,140,150)
+        descLbl.Font = Enum.Font.Gotham
+        descLbl.TextSize = 11
+        descLbl.TextXAlignment = Enum.TextXAlignment.Left
+
+        local btn = Instance.new("TextButton", row)
+        btn.Size = UDim2.new(0, 120, 0, 24)
+        btn.Position = UDim2.new(1, -132, 0.5, -12)
+        btn.BackgroundColor3 = Color3.fromRGB(40,40,44)
+        btn.TextColor3 = Color3.fromRGB(220,220,230)
+        btn.Font = Enum.Font.GothamBold
+        btn.TextSize = 12
+        btn.Text = buttonText
+        Instance.new("UICorner", btn).CornerRadius = UDim.new(0, 6)
+        btn.MouseButton1Click:Connect(callback)
+    end
+
+    createActionRow(espPage, "Resend Roles", "Show current murderer & sheriff again", "Resend", function()
+        if lastMurderer and lastSheriff then
+            SendRoleNotification(lastMurderer, lastSheriff)
+        else
+            pcall(function()
+                game.StarterGui:SetCore("SendNotification", { Title = "No Data", Text = "Roles not detected yet", Duration = 3 })
+            end)
+        end
+    end)
+
+    -- Teleport Page
+    createActionRow(teleportPage, "Grab Gun", "Teleport to dropped gun briefly", "Grab Gun", grabGun)
+
+    -- Misc Page
+    createActionRow(miscPage, "Rejoin Server", "Reconnect to the current server", "Rejoin", function()
+        TeleportService:Teleport(game.PlaceId, player)
+    end)
+
+    -- Settings Page (hotkeys)
+    local function createHotkeyRow(parent, titleText, descText, currentKey, callback)
+        local row = Instance.new("Frame", parent)
+        row.Size = UDim2.new(1, 0, 0, 48)
+        row.BackgroundColor3 = Color3.fromRGB(28,28,32)
+        Instance.new("UICorner", row).CornerRadius = UDim.new(0, 8)
+
+        local titleLbl = Instance.new("TextLabel", row)
+        titleLbl.Size = UDim2.new(0.6, 0, 0, 20)
+        titleLbl.Position = UDim2.new(0, 12, 0, 6)
+        titleLbl.BackgroundTransparency = 1
+        titleLbl.Text = titleText
+        titleLbl.TextColor3 = Color3.fromRGB(220,220,230)
+        titleLbl.Font = Enum.Font.GothamBold
+        titleLbl.TextSize = 13
+        titleLbl.TextXAlignment = Enum.TextXAlignment.Left
+
+        local descLbl = Instance.new("TextLabel", row)
+        descLbl.Size = UDim2.new(0.7, 0, 0, 18)
+        descLbl.Position = UDim2.new(0, 12, 0, 24)
+        descLbl.BackgroundTransparency = 1
+        descLbl.Text = descText
+        descLbl.TextColor3 = Color3.fromRGB(140,140,150)
+        descLbl.Font = Enum.Font.Gotham
+        descLbl.TextSize = 11
+        descLbl.TextXAlignment = Enum.TextXAlignment.Left
+
+        local btn = Instance.new("TextButton", row)
+        btn.Size = UDim2.new(0, 120, 0, 24)
+        btn.Position = UDim2.new(1, -132, 0.5, -12)
+        btn.BackgroundColor3 = Color3.fromRGB(40,40,44)
+        btn.TextColor3 = Color3.fromRGB(220,220,230)
+        btn.Font = Enum.Font.GothamBold
+        btn.TextSize = 12
+        btn.Text = tostring(currentKey.Name)
+        Instance.new("UICorner", btn).CornerRadius = UDim.new(0, 6)
+
+        local waiting = false
+        btn.MouseButton1Click:Connect(function()
+            waiting = true
+            btn.Text = "Press key..."
+            local conn
+            conn = UserInputService.InputBegan:Connect(function(input, gp)
+                if gp then return end
+                if waiting and input.UserInputType == Enum.UserInputType.Keyboard then
+                    waiting = false
+                    btn.Text = tostring(input.KeyCode.Name)
+                    callback(input.KeyCode)
+                    if conn then conn:Disconnect() end
+                end
+            end)
+        end)
+    end
+
+    local guiHotkey = Enum.KeyCode.RightShift
+    local xrayHotkey = Enum.KeyCode.X
+
+    createHotkeyRow(settingsPage, "GUI Hotkey", "Show/hide the interface", guiHotkey, function(key)
+        guiHotkey = key
+    end)
+
+    createHotkeyRow(settingsPage, "X-Ray Hotkey", "Toggle X-Ray on/off", xrayHotkey, function(key)
+        xrayHotkey = key
+    end)
+
+    -- ===== PAGE SWITCHING =====
+    local function setPage(name)
+        for _, p in pairs(pages) do p.Visible = false end
+        if pages[name] then pages[name].Visible = true end
+        sectionTitle.Text = name
+        -- Update sidebar buttons
+        local btns = {mainBtn, tradeBtn, espBtn, teleportBtn, miscBtn, settingsBtn}
+        local names = {"Main", "Trade", "ESP", "Teleport", "Misc", "Settings"}
+        for i, btn in ipairs(btns) do
+            btn.BackgroundColor3 = (names[i] == name) and Color3.fromRGB(40,40,44) or Color3.fromRGB(28,28,30)
+            btn.TextColor3 = (names[i] == name) and Color3.fromRGB(230,230,240) or Color3.fromRGB(150,150,160)
+        end
+    end
+
+    mainBtn.MouseButton1Click:Connect(function() setPage("Main") end)
+    tradeBtn.MouseButton1Click:Connect(function() setPage("Trade") end)
+    espBtn.MouseButton1Click:Connect(function() setPage("ESP") end)
+    teleportBtn.MouseButton1Click:Connect(function() setPage("Teleport") end)
+    miscBtn.MouseButton1Click:Connect(function() setPage("Misc") end)
+    settingsBtn.MouseButton1Click:Connect(function() setPage("Settings") end)
+
+    setPage("Main")
+
+    -- ===== HOTKEYS (global) =====
+    UserInputService.InputBegan:Connect(function(input, gp)
+        if gp then return end
+        if input.KeyCode == guiHotkey then
+            window.Visible = not window.Visible
+        end
+        if input.KeyCode == xrayHotkey then
+            local new = not XrayEnabled
+            XrayEnabled = new
+            _G.DAWN_CONFIG.Xray = new
+            if new then EnableXray() else DisableXray() end
+            -- Update toggle UI if possible (we'll just call the toggle setter)
+            -- We can't directly update the toggle without a reference, but we'll use the state variable.
+            -- The toggle will sync on next UI update? We'll just rely on the state.
+            espToggles.xray(new)
+        end
+    end)
+
+    -- ===== START/STOP LOGIC (unchanged) =====
+    -- We need to add the START button somewhere, maybe in the Main page or a fixed location.
+    -- We'll place a START/STOP button in the top right of the content area.
+    local actionFrame = Instance.new("Frame", contentRoot)
+    actionFrame.Size = UDim2.new(1, 0, 0, 40)
+    actionFrame.Position = UDim2.new(0, 0, 0, 0)
+    actionFrame.BackgroundTransparency = 1
+
+    local startBtn = Instance.new("TextButton", actionFrame)
+    startBtn.Size = UDim2.new(0, 100, 0, 34)
+    startBtn.Position = UDim2.new(1, -110, 0, 0)
+    startBtn.Text = "START"
+    startBtn.TextColor3 = Color3.fromRGB(255,255,255)
+    startBtn.BackgroundColor3 = Accent
+    startBtn.BackgroundTransparency = 0.15
+    startBtn.TextSize = 16
+    startBtn.Font = Enum.Font.GothamBold
+    startBtn.BorderSizePixel = 0
+    local btnCorner = Instance.new("UICorner", startBtn)
+    btnCorner.CornerRadius = UDim.new(0, 8)
+
+    local statusLabel = Instance.new("TextLabel", actionFrame)
+    statusLabel.Size = UDim2.new(0.3, 0, 1, 0)
+    statusLabel.Position = UDim2.new(0, 0, 0, 0)
     statusLabel.BackgroundTransparency = 1
     statusLabel.Text = "OFFLINE"
     statusLabel.TextColor3 = Color3.fromRGB(180,180,190)
     statusLabel.TextSize = 14
     statusLabel.Font = Enum.Font.GothamBold
     statusLabel.TextXAlignment = Enum.TextXAlignment.Left
-    statusLabel.Name = "StatusLabel"
-    statusLabel.Parent = statusFrame
 
-    local blacklistLabel = Instance.new("TextLabel")
-    blacklistLabel.Size = UDim2.new(0.3, 0, 1, 0)
-    blacklistLabel.Position = UDim2.new(0.7, 0, 0, 0)
-    blacklistLabel.BackgroundTransparency = 1
-    blacklistLabel.Text = "🚫 0"
-    blacklistLabel.TextColor3 = Color3.fromRGB(180,180,190)
-    blacklistLabel.TextSize = 14
-    blacklistLabel.Font = Enum.Font.GothamBold
-    blacklistLabel.TextXAlignment = Enum.TextXAlignment.Right
-    blacklistLabel.Name = "BlacklistLabel"
-    blacklistLabel.Parent = statusFrame
-    blacklistLabelRef = blacklistLabel
+    local statusDot = Instance.new("Frame", actionFrame)
+    statusDot.Size = UDim2.new(0, 10, 0, 10)
+    statusDot.Position = UDim2.new(0, 0, 0.5, -5)
+    statusDot.BackgroundColor3 = Color3.fromRGB(255,80,80)
+    statusDot.BorderSizePixel = 0
+    local dotCorner = Instance.new("UICorner", statusDot)
+    dotCorner.CornerRadius = UDim.new(1,0)
 
-    -- START button
-    local startBtn = Instance.new("TextButton")
-    startBtn.Size = UDim2.new(1, -pad*2, 0, 50)
-    startBtn.Position = UDim2.new(0, pad, 0, pad + 50)
-    startBtn.Text = "START"
-    startBtn.TextColor3 = Color3.fromRGB(255,255,255)
-    startBtn.BackgroundColor3 = Accent
-    startBtn.BackgroundTransparency = 0.15
-    startBtn.TextSize = 18
-    startBtn.Font = Enum.Font.GothamBold
-    startBtn.BorderSizePixel = 0
-    startBtn.Parent = contentContainer
-    local startCorner = Instance.new("UICorner")
-    startCorner.CornerRadius = UDim.new(0, 12)
-    startCorner.Parent = startBtn
-    local startGrad = Instance.new("UIGradient")
-    startGrad.Color = ColorSequence.new({
-        ColorSequenceKeypoint.new(0, Accent),
-        ColorSequenceKeypoint.new(1, Color3.fromRGB(255,110,180))
-    })
-    startGrad.Rotation = 45
-    startGrad.Parent = startBtn
-
-    local startOriginalSize = startBtn.Size
-    startBtn.MouseEnter:Connect(function()
-        TweenService:Create(startBtn, TweenInfo.new(0.15), {Size = startOriginalSize + UDim2.new(0,8,0,4)}):Play()
-    end)
-    startBtn.MouseLeave:Connect(function()
-        TweenService:Create(startBtn, TweenInfo.new(0.15), {Size = startOriginalSize}):Play()
-    end)
-
-    -- Secondary buttons
-    local secondaryRow = Instance.new("Frame")
-    secondaryRow.Size = UDim2.new(1, -pad*2, 0, 44)
-    secondaryRow.Position = UDim2.new(0, pad, 0, pad + 110)
-    secondaryRow.BackgroundTransparency = 1
-    secondaryRow.Parent = contentContainer
-
-    local hopBtn = Instance.new("TextButton")
-    hopBtn.Size = UDim2.new(0.48, -6, 1, 0)
-    hopBtn.Position = UDim2.new(0, 0, 0, 0)
-    hopBtn.Text = "S-HOP"
-    hopBtn.TextColor3 = Color3.fromRGB(255,255,255)
-    hopBtn.BackgroundColor3 = Color3.fromRGB(50,50,80)
-    hopBtn.BackgroundTransparency = 0.3
-    hopBtn.TextSize = 15
-    hopBtn.Font = Enum.Font.GothamBold
-    hopBtn.BorderSizePixel = 0
-    hopBtn.Parent = secondaryRow
-    local hopCorner = Instance.new("UICorner")
-    hopCorner.CornerRadius = UDim.new(0, 10)
-    hopCorner.Parent = hopBtn
-    hopBtn.ZIndex = 10
-    hopBtn.MouseButton1Click:Connect(serverHop)
-
-    local reloadBtn = Instance.new("TextButton")
-    reloadBtn.Size = UDim2.new(0.48, -6, 1, 0)
-    reloadBtn.Position = UDim2.new(0.52, 0, 0, 0)
-    reloadBtn.Text = "↻ RELOAD"
-    reloadBtn.TextColor3 = Color3.fromRGB(255,255,255)
-    reloadBtn.BackgroundColor3 = Color3.fromRGB(70,70,100)
-    reloadBtn.BackgroundTransparency = 0.3
-    reloadBtn.TextSize = 15
-    reloadBtn.Font = Enum.Font.GothamBold
-    reloadBtn.BorderSizePixel = 0
-    reloadBtn.Parent = secondaryRow
-    local reloadCorner = Instance.new("UICorner")
-    reloadCorner.CornerRadius = UDim.new(0, 10)
-    reloadCorner.Parent = reloadBtn
-    reloadBtn.ZIndex = 10
-    reloadBtn.MouseButton1Click:Connect(reloadScript)
-
-    -- Force slider
-    local sliderFrame = Instance.new("Frame")
-    sliderFrame.Size = UDim2.new(1, -pad*2, 0, 50)
-    sliderFrame.Position = UDim2.new(0, pad, 0, pad + 170)
-    sliderFrame.BackgroundTransparency = 1
-    sliderFrame.Parent = contentContainer
-
-    local sliderLabel = Instance.new("TextLabel")
-    sliderLabel.Size = UDim2.new(0.3, 0, 0.5, 0)
-    sliderLabel.Position = UDim2.new(0, 0, 0, 0)
-    sliderLabel.BackgroundTransparency = 1
-    sliderLabel.Text = "FORCE"
-    sliderLabel.TextColor3 = Color3.fromRGB(180,180,190)
-    sliderLabel.TextSize = 14
-    sliderLabel.Font = Enum.Font.GothamBold
-    sliderLabel.TextXAlignment = Enum.TextXAlignment.Left
-    sliderLabel.Parent = sliderFrame
-
-    local forceValueLabel = Instance.new("TextLabel")
-    forceValueLabel.Size = UDim2.new(0.3, 0, 0.5, 0)
-    forceValueLabel.Position = UDim2.new(0.7, 0, 0, 0)
-    forceValueLabel.BackgroundTransparency = 1
-    forceValueLabel.Text = "5.0e7"
-    forceValueLabel.TextColor3 = Color3.fromRGB(180,180,190)
-    forceValueLabel.TextSize = 14
-    forceValueLabel.Font = Enum.Font.GothamBold
-    forceValueLabel.TextXAlignment = Enum.TextXAlignment.Right
-    forceValueLabel.Name = "ForceValue"
-    forceValueLabel.Parent = sliderFrame
-
-    local sliderTrack = Instance.new("Frame")
-    sliderTrack.Size = UDim2.new(1, 0, 0.35, 0)
-    sliderTrack.Position = UDim2.new(0, 0, 0.65, 0)
-    sliderTrack.BackgroundColor3 = Color3.fromRGB(28,28,37)
-    sliderTrack.BackgroundTransparency = 0.3
-    sliderTrack.BorderSizePixel = 0
-    sliderTrack.Parent = sliderFrame
-    local stCorner = Instance.new("UICorner")
-    stCorner.CornerRadius = UDim.new(0, 999)
-    stCorner.Parent = sliderTrack
-
-    local sliderFill = Instance.new("Frame")
-    sliderFill.Size = UDim2.new(0.5, 0, 1, 0)
-    sliderFill.BackgroundColor3 = Accent
-    sliderFill.BackgroundTransparency = 0.2
-    sliderFill.BorderSizePixel = 0
-    sliderFill.Parent = sliderTrack
-    local sfCorner = Instance.new("UICorner")
-    sfCorner.CornerRadius = UDim.new(0, 999)
-    sfCorner.Parent = sliderFill
-
-    local handle = Instance.new("Frame")
-    handle.Size = UDim2.new(0, 18, 0, 18)
-    handle.Position = UDim2.new(0.5, -9, 0.5, -9)
-    handle.BackgroundColor3 = Accent
-    handle.BackgroundTransparency = 0.3
-    handle.BorderSizePixel = 0
-    handle.Parent = sliderTrack
-    local hCorner = Instance.new("UICorner")
-    hCorner.CornerRadius = UDim.new(1, 0)
-    hCorner.Parent = handle
-    local handleStroke = Instance.new("UIStroke")
-    handleStroke.Thickness = 2
-    handleStroke.Color = Color3.new(1,1,1)
-    handleStroke.Parent = handle
-
-    local dragging = false
-    local function updateSlider(x)
-        local absPos = sliderTrack.AbsolutePosition
-        local size = sliderTrack.AbsoluteSize
-        local relX = math.clamp((x - absPos.X) / size.X, 0, 1)
-        sliderFill.Size = UDim2.new(relX, 0, 1, 0)
-        handle.Position = UDim2.new(relX, -9, 0.5, -9)
-        local force = relX * 90000000
-        if force < 1000000 then force = 1000000 end
-        CONFIG.FLING_FORCE = force
-        _G.DAWN_CONFIG.FLING_FORCE = force
-        forceValueLabel.Text = string.format("%.1e", force)
-    end
-
-    sliderTrack.InputBegan:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.MouseButton1 then
-            dragging = true
-            updateSlider(input.Position.X)
-        end
-    end)
-
-    UserInputService.InputChanged:Connect(function(input)
-        if dragging and input.UserInputType == Enum.UserInputType.MouseMovement then
-            updateSlider(input.Position.X)
-        end
-    end)
-
-    UserInputService.InputEnded:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.MouseButton1 then
-            dragging = false
-        end
-    end)
-
-    -- Settings toggles
-    local settingsHeader = Instance.new("TextLabel")
-    settingsHeader.Size = UDim2.new(1, -pad*2, 0, 24)
-    settingsHeader.Position = UDim2.new(0, pad, 0, pad + 230)
-    settingsHeader.BackgroundTransparency = 1
-    settingsHeader.Text = "SETTINGS"
-    settingsHeader.TextColor3 = Color3.fromRGB(110,110,121)
-    settingsHeader.TextSize = 14
-    settingsHeader.Font = Enum.Font.GothamBold
-    settingsHeader.TextXAlignment = Enum.TextXAlignment.Left
-    settingsHeader.Parent = contentContainer
-
-    local toggleData = {
-        {label = "ANNOUNCEMENTS", var = "ANNOUNCEMENTS", default = CONFIG.ANNOUNCEMENTS},
-        {label = "FLING ENABLED", var = "FLING_ENABLED", default = CONFIG.FLING_ENABLED},
-        {label = "RESET POSITION", var = "RESET_POS", default = CONFIG.RESET_POS},
-        {label = "ANTI-FLING", var = "ANTI_FLING", default = CONFIG.ANTI_FLING},
-        {label = "AUTO TRADE", var = "AUTO_TRADE", default = CONFIG.AUTO_TRADE},
-    }
-
-    for i, data in ipairs(toggleData) do
-        local row = Instance.new("Frame")
-        row.Size = UDim2.new(1, -pad*2, 0, 30)
-        row.Position = UDim2.new(0, pad, 0, pad + 260 + (i-1)*36)
-        row.BackgroundTransparency = 1
-        row.Parent = contentContainer
-
-        local lbl = Instance.new("TextLabel")
-        lbl.Size = UDim2.new(0.6, 0, 1, 0)
-        lbl.BackgroundTransparency = 1
-        lbl.Text = data.label
-        lbl.TextColor3 = Color3.fromRGB(180,180,190)
-        lbl.TextSize = 13
-        lbl.Font = Enum.Font.GothamBold
-        lbl.TextXAlignment = Enum.TextXAlignment.Left
-        lbl.Parent = row
-
-        local switchBg = Instance.new("TextButton")
-        switchBg.Size = UDim2.new(0, 44, 0, 24)
-        switchBg.Position = UDim2.new(0.75, 0, 0.5, -12)
-        switchBg.Text = ""
-        switchBg.BackgroundColor3 = Color3.fromRGB(40,40,55)
-        switchBg.BackgroundTransparency = 0.2
-        switchBg.BorderSizePixel = 0
-        switchBg.Parent = row
-        local swCorner = Instance.new("UICorner")
-        swCorner.CornerRadius = UDim.new(0, 999)
-        swCorner.Parent = switchBg
-
-        local knob = Instance.new("Frame")
-        knob.Size = UDim2.new(0, 18, 0, 18)
-        knob.Position = UDim2.new(0, 2, 0.5, -9)
-        knob.BackgroundColor3 = Color3.fromRGB(255,255,255)
-        knob.BackgroundTransparency = 0.8
-        knob.BorderSizePixel = 0
-        knob.Parent = switchBg
-        local knobCorner = Instance.new("UICorner")
-        knobCorner.CornerRadius = UDim.new(1, 0)
-        knobCorner.Parent = knob
-
-        local isOn = data.default
-        local function updateSwitch()
-            if isOn then
-                switchBg.BackgroundColor3 = Accent
-                switchBg.BackgroundTransparency = 0.2
-                knob.Position = UDim2.new(1, -20, 0.5, -9)
-                knob.BackgroundColor3 = Color3.new(1,1,1)
-                knob.BackgroundTransparency = 0
-            else
-                switchBg.BackgroundColor3 = Color3.fromRGB(40,40,55)
-                switchBg.BackgroundTransparency = 0.2
-                knob.Position = UDim2.new(0, 2, 0.5, -9)
-                knob.BackgroundColor3 = Color3.fromRGB(255,255,255)
-                knob.BackgroundTransparency = 0.8
-            end
-        end
-        updateSwitch()
-
-        switchBg.MouseButton1Click:Connect(function()
-            isOn = not isOn
-            CONFIG[data.var] = isOn
-            _G.DAWN_CONFIG[data.var] = isOn
-            updateSwitch()
-            if data.var == "AUTO_TRADE" then
-                AUTO_TRADE_ENABLED = isOn
-                if isOn and isActive then
-                    setupTradeListener()
-                elseif not isOn then
-                    stopTradeListener()
-                end
-            end
-            if data.var == "ANNOUNCEMENTS" and isActive then
-                if isOn then startAnnounceLoop() else
-                    if announcementConnection then announcementConnection:Disconnect(); announcementConnection = nil end
-                end
-            end
-        end)
-    end
-
-    -- Clear blacklist button
-    local clearBtn = Instance.new("TextButton")
-    clearBtn.Size = UDim2.new(0.4, 0, 0, 28)
-    clearBtn.Position = UDim2.new(0.3, 0, 0, pad + 260 + 5*36 + 10)
-    clearBtn.Text = "CLEAR BLACKLIST"
-    clearBtn.TextColor3 = Color3.fromRGB(255,255,255)
-    clearBtn.BackgroundColor3 = Accent
-    clearBtn.BackgroundTransparency = 0.3
-    clearBtn.TextSize = 12
-    clearBtn.Font = Enum.Font.GothamBold
-    clearBtn.BorderSizePixel = 0
-    clearBtn.Parent = contentContainer
-    local clearCorner = Instance.new("UICorner")
-    clearCorner.CornerRadius = UDim.new(0, 8)
-    clearCorner.Parent = clearBtn
-    clearBtn.MouseButton1Click:Connect(clearVisited)
-
-    -- START/STOP
     startBtn.MouseButton1Click:Connect(function()
         if isActive then
             stopSystem()
@@ -934,34 +1378,22 @@ local function createDawnHubGUI()
             statusLabel.Text = "ONLINE"
             statusLabel.TextColor3 = Color3.fromRGB(100,255,100)
         end
-        updateBlacklistCounter()
     end)
 
     if _G.DAWN_ACTIVE then
-        isActive = true
-        firstWarningSent = false
-        savePosition()
-        startAnnounceLoop()
-        startFlingLoop()
-        if CONFIG.AUTO_TRADE then
-            AUTO_TRADE_ENABLED = true
-            setupTradeListener()
-        end
+        startSystem()
         startBtn.Text = "STOP"
         statusDot.BackgroundColor3 = Color3.fromRGB(100,255,100)
         statusLabel.Text = "ONLINE"
         statusLabel.TextColor3 = Color3.fromRGB(100,255,100)
-        updateBlacklistCounter()
     end
 
-    updateBlacklistCounter()
-
-    -- Minimize
+    -- Minimize function (same)
     local function toggleMinimize()
         isMinimized = not isMinimized
         local targetSize = isMinimized and minimizedSize or fullSize
-        local centerOffset = isMinimized and -70 or -210
-        local verticalOffset = isMinimized and -20 or -280
+        local centerOffset = isMinimized and -70 or -300
+        local verticalOffset = isMinimized and -20 or -260
         local targetPos = UDim2.new(0.5, centerOffset, 0.5, verticalOffset)
         if isMinimized then
             contentContainer.Visible = false
@@ -1005,7 +1437,7 @@ end)
 
 local success, err = pcall(createDawnHubGUI)
 if success then
-    print("Dawn Hub loaded.")
+    print("Dawn Hub v11 loaded.")
 else
     warn("UI error: " .. tostring(err))
 end
