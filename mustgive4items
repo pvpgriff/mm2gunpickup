@@ -1,12 +1,12 @@
--- DAWN HUB v10.2 – Final, No queue_on_teleport
--- Copy this entire script into your executor.
+-- DAWN HUB v10.3 – No getgenv, No queue_on_teleport
 
-if getgenv().SCRIPT_RUNNING then return end
-getgenv().SCRIPT_RUNNING = true
+-- Safe first line: check if already running
+if _G.SCRIPT_RUNNING then return end
+_G.SCRIPT_RUNNING = true
 
--- ===== PERSISTENT STATE =====
-if not getgenv().DAWN_CONFIG then
-    getgenv().DAWN_CONFIG = {
+-- ===== PERSISTENT STATE (using _G) =====
+if not _G.DAWN_CONFIG then
+    _G.DAWN_CONFIG = {
         ANNOUNCE_MIN = 19,
         ANNOUNCE_MAX = 24,
         FLING_INTERVAL_MIN = 2,
@@ -20,10 +20,11 @@ if not getgenv().DAWN_CONFIG then
         AUTO_TRADE = true,
     }
 end
-if getgenv().DAWN_ACTIVE == nil then getgenv().DAWN_ACTIVE = false end
-getgenv().KEEP_ALIVE = true
-getgenv().SCRIPT_URL = "https://raw.githubusercontent.com/ddawwn/mm2/refs/heads/main/mustgive4items"
+if _G.DAWN_ACTIVE == nil then _G.DAWN_ACTIVE = false end
+_G.KEEP_ALIVE = true
+_G.SCRIPT_URL = "https://raw.githubusercontent.com/ddawwn/mm2/refs/heads/main/mustgive4items"
 
+-- ===== SERVICES =====
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
@@ -76,7 +77,7 @@ end
 
 -- ===== FLING ENGINE =====
 local function flingAll(force)
-    force = force or getgenv().DAWN_CONFIG.FLING_FORCE
+    force = force or _G.DAWN_CONFIG.FLING_FORCE
     for _, target in ipairs(Players:GetPlayers()) do
         if target ~= player then
             pcall(function()
@@ -299,8 +300,8 @@ local function stopTradeListener()
 end
 
 -- ===== STATE =====
-local CONFIG = getgenv().DAWN_CONFIG
-local isActive = getgenv().DAWN_ACTIVE
+local CONFIG = _G.DAWN_CONFIG
+local isActive = _G.DAWN_ACTIVE
 local firstWarningSent = false
 local gui = nil
 local announcementConnection = nil
@@ -310,20 +311,20 @@ local isMinimized = false
 local fullSize = UDim2.new(0, 420, 0, 560)
 local minimizedSize = UDim2.new(0, 140, 0, 40)
 
-getgenv().OriginalPos = nil
+_G.OriginalPos = nil
 local Accent = Color3.fromRGB(185, 120, 255)
 
 -- ===== CORE FUNCTIONS =====
 local function savePosition()
     local root = character and character:FindFirstChild("HumanoidRootPart")
-    if root then getgenv().OriginalPos = root.CFrame end
+    if root then _G.OriginalPos = root.CFrame end
 end
 
 local function restorePosition()
-    if not CONFIG.RESET_POS or not getgenv().OriginalPos then return end
+    if not CONFIG.RESET_POS or not _G.OriginalPos then return end
     local root = character and character:FindFirstChild("HumanoidRootPart")
     if root then
-        root.CFrame = getgenv().OriginalPos
+        root.CFrame = _G.OriginalPos
         root.Velocity = Vector3.new(0,0,0)
         root.RotVelocity = Vector3.new(0,0,0)
     end
@@ -406,7 +407,7 @@ end
 local function startSystem()
     if isActive then return end
     isActive = true
-    getgenv().DAWN_ACTIVE = true
+    _G.DAWN_ACTIVE = true
     firstWarningSent = false
     savePosition()
     sendChat("[ANNOUNCEMENT] i will not stop kill all untill someone gives me 4 items")
@@ -420,7 +421,7 @@ end
 
 local function stopSystem()
     isActive = false
-    getgenv().DAWN_ACTIVE = false
+    _G.DAWN_ACTIVE = false
     if announcementConnection then announcementConnection:Disconnect(); announcementConnection = nil end
     if flingCoroutine then coroutine.close(flingCoroutine); flingCoroutine = nil end
     stopTradeListener()
@@ -429,15 +430,15 @@ end
 
 local function closeSystem()
     stopSystem()
-    getgenv().SCRIPT_RUNNING = false
-    getgenv().KEEP_ALIVE = false
+    _G.SCRIPT_RUNNING = false
+    _G.KEEP_ALIVE = false
     if gui then gui:Destroy(); gui = nil end
 end
 
 local function reloadScript()
-    if getgenv().SCRIPT_URL then
+    if _G.SCRIPT_URL then
         pcall(function()
-            local url = getgenv().SCRIPT_URL
+            local url = _G.SCRIPT_URL
             local success, result = pcall(function()
                 return game:HttpGet(url)
             end)
@@ -453,7 +454,8 @@ local function reloadScript()
     end
 end
 
--- ===== GUI CREATION =====
+-- ===== GUI CREATION (full, same as before) =====
+-- (I'll include the full GUI code to keep it complete)
 local function createDawnHubGUI()
     if gui then pcall(function() gui:Destroy() end); gui = nil end
 
@@ -500,7 +502,7 @@ local function createDawnHubGUI()
     border.Color = Accent
     border.Parent = window
 
-    -- Top Bar (draggable)
+    -- Top Bar
     local topBar = Instance.new("Frame")
     topBar.Size = UDim2.new(1, 0, 0, 40)
     topBar.BackgroundColor3 = Color3.fromRGB(18, 18, 24)
@@ -778,7 +780,7 @@ local function createDawnHubGUI()
         local force = relX * 90000000
         if force < 1000000 then force = 1000000 end
         CONFIG.FLING_FORCE = force
-        getgenv().DAWN_CONFIG.FLING_FORCE = force
+        _G.DAWN_CONFIG.FLING_FORCE = force
         forceValueLabel.Text = string.format("%.1e", force)
     end
 
@@ -882,7 +884,7 @@ local function createDawnHubGUI()
         switchBg.MouseButton1Click:Connect(function()
             isOn = not isOn
             CONFIG[data.var] = isOn
-            getgenv().DAWN_CONFIG[data.var] = isOn
+            _G.DAWN_CONFIG[data.var] = isOn
             updateSwitch()
             if data.var == "AUTO_TRADE" then
                 AUTO_TRADE_ENABLED = isOn
@@ -935,8 +937,7 @@ local function createDawnHubGUI()
         updateBlacklistCounter()
     end)
 
-    -- Auto-start if was active
-    if getgenv().DAWN_ACTIVE then
+    if _G.DAWN_ACTIVE then
         isActive = true
         firstWarningSent = false
         savePosition()
